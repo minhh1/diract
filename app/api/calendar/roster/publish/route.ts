@@ -15,8 +15,8 @@ function addDaysUTC(dateStr: string, days: number): string {
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin, companyId, isAdmin } = auth;
-  if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  const { admin, companyId, isAdmin, hasPermission } = auth;
+  if (!isAdmin && !hasPermission("roster.publish")) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const weekStart: string | undefined = body?.weekStart;

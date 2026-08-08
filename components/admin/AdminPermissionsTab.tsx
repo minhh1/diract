@@ -12,7 +12,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, User, ShieldCheck, ChevronDown } from "lucide-react";
+import { Users, User, ShieldCheck, ChevronDown, Plus, Pencil, Trash2, X, Check } from "lucide-react";
+import { CUSTOM_ROLE_SLUGS } from "@/lib/permissions/customRoleSlugs";
 
 type ProjectAccessMode = "all_members" | "specific_teams" | "specific_members";
 
@@ -58,6 +59,13 @@ const PERMISSION_DEFS: PermissionDef[] = [
   { key: "include_team_tasks_in_scope", label: "Without the above, members can still see tasks assigned to this team", visible: ({ team }) => !team.allow_task_view },
 ];
 
+interface CustomRole {
+  id: string;
+  name: string;
+  permissions: string[];
+  display_order: number;
+}
+
 interface Props {
   companyId: string;
 }
@@ -71,6 +79,12 @@ export default function AdminPermissionsTab({ companyId }: Props) {
   const [defaultMemberIds, setDefaultMemberIds] = useState<Set<string>>(new Set());
   const [hasTimeEntries, setHasTimeEntries] = useState(false);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [creatingRole, setCreatingRole] = useState(false);
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [editingRoleName, setEditingRoleName] = useState("");
+  const [expandedRoleId, setExpandedRoleId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +94,7 @@ export default function AdminPermissionsTab({ companyId }: Props) {
       { data: memberships },
       { data: defaultAccessRows },
       { count: timeEntriesCount },
+      { data: roleRows },
     ] = await Promise.all([
       supabase.from("companies")
         .select("id, project_default_access, restrict_new_tables_dashboards_by_default")
@@ -91,6 +106,9 @@ export default function AdminPermissionsTab({ companyId }: Props) {
       supabase.from("company_project_default_access").select("target_type, target_id").eq("company_id", companyId),
       supabase.from("company_tables").select("id", { count: "exact", head: true })
         .eq("company_id", companyId).eq("slug", "time-fee-entries").is("deleted_at", null),
+      supabase.from("company_custom_roles")
+        .select("id, name, permissions, display_order")
+        .eq("company_id", companyId).order("display_order").order("name"),
     ]);
 
     setCompany(comp as Company);
@@ -98,6 +116,7 @@ export default function AdminPermissionsTab({ companyId }: Props) {
     setHasTimeEntries(!!timeEntriesCount);
     setDefaultTeamIds(new Set((defaultAccessRows || []).filter(r => r.target_type === "team").map(r => r.target_id)));
     setDefaultMemberIds(new Set((defaultAccessRows || []).filter(r => r.target_type === "member").map(r => r.target_id)));
+    setCustomRoles((roleRows || []) as CustomRole[]);
 
     if (memberships?.length) {
       const { data: profs } = await supabase.from("profiles")
@@ -161,6 +180,46 @@ export default function AdminPermissionsTab({ companyId }: Props) {
   const togglePermission = async (teamId: string, key: PermissionKey, next: boolean) => {
     setTeams(prev => prev.map(t => t.id === teamId ? { ...t, [key]: next } : t));
     await supabase.from("teams").update({ [key]: next }).eq("id", teamId);
+  };
+
+  const createCustomRole = async () => {
+    const name = newRoleName.trim();
+    if (!name || creatingRole) return;
+    setCreatingRole(true);
+    const { data, error } = await supabase
+      .from("company_custom_roles")
+      .insert({ company_id: companyId, name, permissions: [], display_order: customRoles.length })
+      .select("id, name, permissions, display_order")
+      .single();
+    if (!error && data) {
+      setCustomRoles(prev => [...prev, data as CustomRole]);
+      setNewRoleName("");
+      setExpandedRoleId((data as CustomRole).id);
+    }
+    setCreatingRole(false);
+  };
+
+  const renameCustomRole = async (roleId: string) => {
+    const name = editingRoleName.trim();
+    if (!name) { setEditingRoleId(null); return; }
+    setCustomRoles(prev => prev.map(r => r.id === roleId ? { ...r, name } : r));
+    setEditingRoleId(null);
+    await supabase.from("company_custom_roles").update({ name }).eq("id", roleId);
+  };
+
+  const deleteCustomRole = async (roleId: string) => {
+    setCustomRoles(prev => prev.filter(r => r.id !== roleId));
+    await supabase.from("company_custom_roles").delete().eq("id", roleId);
+  };
+
+  const toggleCustomRolePermission = async (roleId: string, slug: string, checked: boolean) => {
+    const role = customRoles.find(r => r.id === roleId);
+    if (!role) return;
+    const nextPermissions = checked
+      ? [...role.permissions, slug]
+      : role.permissions.filter(p => p !== slug);
+    setCustomRoles(prev => prev.map(r => r.id === roleId ? { ...r, permissions: nextPermissions } : r));
+    await supabase.from("company_custom_roles").update({ permissions: nextPermissions }).eq("id", roleId);
   };
 
   if (loading) return <p className="text-[11px] text-slate-400">Loading...</p>;
@@ -340,6 +399,92 @@ export default function AdminPermissionsTab({ companyId }: Props) {
             })}
           </div>
         )}
+      </div>
+
+      {/* ── Custom roles ── */}
+      <div className="bg-white border border-slate-200 rounded-[40px] p-8">
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Custom roles</p>
+        <p className="text-[11px] text-slate-500 mb-4">
+          Give specific members extra capabilities without making them full admins &mdash; e.g. a &quot;Supervisor&quot; who can edit or publish the roster. Assign a role to a member from Admin &gt; Members.
+        </p>
+
+        <div className="space-y-2 mb-3">
+          {customRoles.map(role => {
+            const isOpen = expandedRoleId === role.id;
+            const isEditing = editingRoleId === role.id;
+            return (
+              <div key={role.id} className="border border-slate-100 rounded-2xl overflow-hidden">
+                <div className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/60 transition-colors">
+                  {isEditing ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        autoFocus
+                        value={editingRoleName}
+                        onChange={e => setEditingRoleName(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") renameCustomRole(role.id); if (e.key === "Escape") setEditingRoleId(null); }}
+                        className="flex-1 text-[12px] font-bold text-slate-700 border border-indigo-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-100"
+                      />
+                      <button onClick={() => renameCustomRole(role.id)} className="p-1 text-indigo-600 hover:text-indigo-800"><Check size={14} /></button>
+                      <button onClick={() => setEditingRoleId(null)} className="p-1 text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setExpandedRoleId(isOpen ? null : role.id)}
+                      className="flex items-center gap-2 text-[12px] font-bold text-slate-700 flex-1 text-left"
+                    >
+                      <ShieldCheck size={13} className="text-indigo-500" /> {role.name}
+                    </button>
+                  )}
+                  {!isEditing && (
+                    <span className="flex items-center gap-1 shrink-0">
+                      <span className="text-[10px] text-slate-400 mr-1">{role.permissions.length} of {CUSTOM_ROLE_SLUGS.length}</span>
+                      <button onClick={() => { setEditingRoleId(role.id); setEditingRoleName(role.name); }} className="p-1.5 text-slate-400 hover:text-indigo-600"><Pencil size={12} /></button>
+                      <button onClick={() => deleteCustomRole(role.id)} className="p-1.5 text-slate-400 hover:text-red-600"><Trash2 size={12} /></button>
+                      <button onClick={() => setExpandedRoleId(isOpen ? null : role.id)} className="p-1.5 text-slate-400">
+                        <ChevronDown size={12} className={`transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                      </button>
+                    </span>
+                  )}
+                </div>
+                {isOpen && (
+                  <div className="px-5 pb-4 space-y-0.5 border-t border-slate-100 pt-2">
+                    {CUSTOM_ROLE_SLUGS.map(slugDef => (
+                      <label key={slugDef.slug} className="flex items-start gap-2.5 py-2 px-2 -mx-2 rounded-xl cursor-pointer hover:bg-slate-50/50 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={role.permissions.includes(slugDef.slug)}
+                          onChange={e => toggleCustomRolePermission(role.id, slugDef.slug, e.target.checked)}
+                          className="w-4 h-4 accent-indigo-600 shrink-0 mt-0.5"
+                        />
+                        <span>
+                          <span className="block text-[11px] font-semibold text-slate-600">{slugDef.label}</span>
+                          <span className="block text-[10px] text-slate-400">{slugDef.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            value={newRoleName}
+            onChange={e => setNewRoleName(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") createCustomRole(); }}
+            placeholder="New role name, e.g. Supervisor"
+            className="flex-1 text-[12px] border border-slate-200 rounded-2xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300"
+          />
+          <button
+            onClick={createCustomRole}
+            disabled={!newRoleName.trim() || creatingRole}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-indigo-600 text-white text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
+          >
+            <Plus size={13} /> Add role
+          </button>
+        </div>
       </div>
     </div>
   );

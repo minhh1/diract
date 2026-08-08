@@ -79,4 +79,9 @@ export const NOTIFICATION_EVENT_TYPES: NotificationEventType[] = [
     label: "Property link request",
     description: "A matter's name looks like a property address and needs approval to link (or create) the matching Property. (Admins only.)",
   },
+  {
+    key: "calendar_date_due",
+    label: "Calendar reminder",
+    description: "A date you've added to the calendar (e.g. a task's due date) arrives.",
+  },
 ];

@@ -66,6 +66,51 @@ as the AI assistant itself) that starts a new conversation with the typed
 text sent immediately -- see `AiChatThread`'s `initialQuery` prop and
 `ai/[id].tsx`'s `q` search param, which is how that shortcut gets there.
 
+## iPad layout
+
+Above ~700pt window width on iPad specifically (`Platform.isPad` + live
+`useWindowDimensions()`, see `src/hooks/use-tablet-layout.ts`'s
+`useIsTabletLayout`/`useIsWideTabletLayout` -- gated to iOS+isPad, so
+Android tablets and iPhone's own Slide Over/Split View width changes never
+trigger it), the app switches from the phone's bottom tab bar + full-screen
+detail pushes to:
+
+- A permanent sidebar (`(app)/_layout.tsx` swaps `<Tabs>` for
+  `expo-router/drawer`'s `<Drawer drawerType="permanent">`, custom content
+  in `src/components/navigation/SidebarContent.tsx`) -- a fixed-width icon
+  rail at every width, matching the web app's own rail
+  (`components/Sidebar.tsx`) rather than growing into a labeled panel at
+  any breakpoint; each icon keeps a small label underneath since a touch
+  rail has no hover state to reveal one otherwise. Deliberately not Expo
+  Router's own `unstable-split-view` (`UISplitViewController` wrapper) --
+  its docs call it alpha/"not ready for production usage yet" as of SDK
+  57, iOS-only, can't be nested.
+- Master-detail split for Matters/Leads/Properties (the shared
+  `RecordListView`/`RecordDetailView` pattern) via
+  `src/components/records/MasterDetailLayout.tsx`, selection driven by a
+  `?selected=<id>` query param on the same route rather than pushing to
+  `[id].tsx` (untouched, still the phone-only code path).
+  `RecordListView`'s `selectedId`/`onSelect` props default to `undefined`,
+  so phone behavior is provably unchanged. First row auto-selects when
+  nothing's picked yet, matching Mail/Notes/Files convention. The list
+  pane can be collapsed so the detail pane fills the screen via a handle
+  on the divider (shared state with the sidebar rail, see
+  `src/lib/masterDetailPanel.tsx` -- tapping the already-active rail item
+  toggles it too) -- Tasks is deliberately not in this set, see below.
+- A multi-column dashboard grid (`dashboards/[slug].tsx`) restoring the
+  web builder's 12-column `layout.w` (discarded on phone, which flattens
+  to one column) via a `flexWrap` row -- best-effort left-to-right wrap of
+  the sorted widget array, not true `(x,y)` cell placement, so a web
+  author's precise multi-row gaps may not be pixel-perfect. Capped at
+  `MaxContentWidth` (`src/constants/theme.ts`, previously unused) on very
+  wide iPads. Each widget also has its own expand/collapse toggle to fill
+  the grid at full width temporarily.
+
+Landscape is unlocked on iPad only (`src/hooks/use-orientation-lock.ts`,
+`expo-screen-orientation` -- iPhone stays portrait-locked via the same
+hook). `app.json`'s `orientation` is `"default"`, not `"portrait"`, for
+this reason -- the runtime lock is what actually constrains iPhone now.
+
 ## What's built
 
 - **Auth** (`src/app/sign-in.tsx`) -- email/password, Google OAuth, invite
@@ -75,13 +120,20 @@ text sent immediately -- see `AiChatThread`'s `initialQuery` prop and
   writes) so an account created on one platform behaves identically on the
   other.
 - **Core CRM** -- Matters (`projects`), Leads & Contacts (`entities`),
-  Tasks (`tasks`), and Properties (under More) as list + detail screens,
-  reading/writing the same `get_schema_metadata` RPC and
+  and Properties (under More) as list + detail screens, reading/writing
+  the same `get_schema_metadata` RPC and
   `company_custom_fields`/`company_custom_field_values` tables the web
   dashboard uses (`src/lib/records.ts`, `src/lib/recordsWrite.ts`).
   Relation fields open a search-and-select sheet
   (`src/components/records/RelationPickerSheet.tsx`); date fields use the
-  native date picker.
+  native date picker. The Tasks tab is deliberately not part of this raw
+  list + detail pattern -- the underlying `tasks` system table carries a
+  lot of columns not meant for direct viewing (raw relation ids, a JSON
+  reminder-settings column, etc.), so it instead resolves to the
+  company's own `scope: 'company'` `public_task_pages` row and renders it
+  through `src/components/tasks/TaskPageContent.tsx` (shared with the
+  Shared Pages destination at `more/public/tasks/[pageId].tsx`), with a
+  message asking for one to be created on web if none exists yet.
 - **Push notifications** -- `device_push_tokens` table
   (`supabase/migrations/20260727030000_device_push_tokens.sql`),
   registration from the More tab, and
@@ -118,42 +170,92 @@ text sent immediately -- see `AiChatThread`'s `initialQuery` prop and
   editor, templates, Outlook/Gmail inboxes, billing, virtual computers,
   marketplace, admin, and settings -- these open the responsive web
   dashboard in an in-app browser rather than a half-native rebuild.
-- **Dashboards** (Dashboards tab, `src/app/(app)/dashboards/`) -- a first,
-  intentionally partial native port of the web app's dashboard-widget
-  engine (`../lib/dashboardWidgets/`), viewing `company_dashboards`
-  ("boards") sourced from one of the 3 system tables the builder itself
-  allows as a board source (Matters/Properties/Leads & Contacts, not
-  Tasks -- see `../lib/hooks/useSystemTableAsCustomTable.ts`). Renders
-  `heading`/`text`/`summary_tile`/`grid`/`chart`/`quick_add_form` widgets;
-  everything else (the trust-accounting widgets, document export/import,
-  filter bars) shows an "open on web" card instead of a blank gap, so a
-  dashboard mixing supported and unsupported widgets still mostly works.
-  A team-restricted dashboard (`restricted_to_team_id` set) is only listed
-  for `company_admin` or that team's leader, mirroring
+- **Kiosk mode** (`src/lib/session.tsx`'s `role`, `src/components/kiosk/`)
+  -- a `company_memberships.role = 'kiosk'` session (an admin-created,
+  non-human login for a shared device, see `components/KioskAppShell.tsx`
+  on web) gets no tab bar/drawer at all: `(app)/_layout.tsx` renders
+  `KioskScreen` in place of the normal navigator the moment `role` resolves
+  to `'kiosk'`, so there's no route to escape to in the first place (web
+  has to redirect away from a typed-in URL; native has no address bar).
+  `KioskScreen` mirrors the web kiosk branch of
+  `app/(app)/dashboard/calendar/page.tsx`: a Today/Weekly/Monthly toggle
+  over `KioskCheckInList` (tap-to-check-in/out via `/api/kiosk/checkins`),
+  `KioskRosterWeek`/`KioskRosterMonth` (read-only ports of
+  `components/calendar/RosterWeekView.tsx` and the web month grid), and
+  `KioskHoursSummary` (`/api/kiosk/checkins/summary`, hours worked per
+  staff over the visible range).
+- **Dashboards** (Dashboards tab, `src/app/(app)/dashboards/`) -- a native
+  port of the web app's dashboard-widget engine (`../lib/dashboardWidgets/`),
+  viewing `company_dashboards` ("boards") sourced from one of the 3 system
+  tables the builder allows as a board source (Matters/Properties/Leads &
+  Contacts, not Tasks -- see `../lib/hooks/useSystemTableAsCustomTable.ts`)
+  OR a genuine custom table (`customTableDashboardData.ts`, a read/write
+  port of `../lib/hooks/useCustomTable.ts`'s schema resolution -- capped at
+  200 records, no `allow_multiple` field support). Every widget type
+  renders natively except `finance_model_search`/`residual_land_solver`
+  (deliberately not ported -- `finance_model_pages`/`residual_land_solver_pages`
+  have zero rows in production, see "Shared pages" below) and, on a
+  custom-table board specifically, `quick_add_form`/`my_tasks_button` for a
+  ledger table or one with a `sum_related`/`max_related` field (see
+  `customTableWrite.ts`'s `isSupportedForWrite` -- those still fall back to
+  "open on web"). A team-restricted dashboard (`restricted_to_team_id` set)
+  is only listed for `company_admin` or that team's leader, mirroring
   `../lib/hooks/useCustomDashboards.ts`'s `isVisibleRestrictedDashboard`
-  exactly. `chart` (`src/components/dashboard/DashboardActivityChart.tsx`)
-  is a simplified native port of its web counterpart: bar/line/area,
-  multi-series with a tap-to-toggle legend, always the last 12 buckets
-  regardless of granularity -- it drops the web version's day-granularity
-  month pager, hover tooltips (tap a bar/point instead), and the axis-tag
-  toggle-group selector for a chart like Billable/Non-billable x
-  Hours/Amount (falls back to the flat legend every other multi-series
-  chart already uses). `quick_add_form` (`src/components/dashboard/QuickAddFormWidget.tsx`)
-  creates a record via `src/lib/recordsWrite.ts`'s `createRecord` (mirrors
-  `lib/services/systemTableRecordService.ts`'s own native/custom field
-  split); it drops the web version's formula-field live preview,
-  drag-to-reorder, and prefill/fixedValues (the last two only matter for a
-  record-scoped sub-dashboard, which mobile doesn't have yet). A board
-  sourced from a genuine custom table (not a system table) falls back to
-  "open on web" entirely, since there's no mobile port yet of
-  `../lib/hooks/useCustomTable.ts`'s schema resolution.
+  exactly.
+  - `filter_bar` (`DashboardFilterBar.tsx`) -- date/select/boolean/relation
+    pills narrowing whatever grid/summary_tile/chart widgets share the
+    dashboard. No drag-reorder, no `$team_scope`/`$current_user`
+    auto-narrowing or "set as my default view" (always starts on "All"),
+    no "Blank" option, no free-text/number filter control.
+  - `chart` (`DashboardActivityChart.tsx`) -- bar/line/area, multi-series
+    with a tap-to-toggle legend, always the last 12 buckets regardless of
+    granularity. Drops the day-granularity month pager, hover tooltips (tap
+    a bar/point instead), and the axis-tag toggle-group selector.
+  - `quick_add_form` -- `QuickAddFormWidget.tsx` writes a system-table
+    record via `src/lib/recordsWrite.ts`; `CustomTableQuickAddForm.tsx`
+    writes a custom-table record via `customTableWrite.ts` (a port of
+    `lib/services/customTableService.ts`'s `createRecord` +
+    `computeFormulaFields` -- ledger tables, `auto_number_prefix`,
+    `is_unique` enforcement, and `sum_related`/`max_related` rollup
+    recomputation on the parent aren't ported, see `isSupportedForWrite`).
+    Both drop the web version's drag-to-reorder; formula fields are
+    excluded from the form entirely rather than shown read-only. Accepts a
+    `prefill` from `my_tasks_button`'s "Convert" via `[slug].tsx`'s
+    `quickAddPrefill` state, same as web's `onQuickAddPrefill`.
+  - `my_tasks_button`/`auto_time_recording_button` -- open a native sheet;
+    the latter drives the exact same `app/api/time-entries/auto-generate`/
+    `.../submit` routes web uses (no drafting/matching logic duplicated).
+    No AI description rewrite, no admin "push everyone's day" toggle.
+  - `trust_reconciliation`/`trust_ledger_statement`/`trust_cash_book`/
+    `trust_aged_balances`/`ledes_export`/`time_fees_report`/
+    `time_aging_report` -- read-only reports, all pure client-side
+    aggregation over already-fetched records ported 1:1 from their web
+    counterparts (`trust_aged_balances` shares `src/lib/trust/trustBalances.ts`,
+    a byte-for-byte verbatim port of the web module, rather than a second
+    implementation of the balance math). No "Print"/PDF export on any of
+    them.
+  - `public_task_page`/`public_document_page`/`public_client_update_page`
+    -- a card that navigates to the matching "Shared pages" screen below
+    instead of embedding the page inline (which is how web renders these).
+  - `document_export`/`ledes_export`'s per-row PDF and `invoice_import`'s
+    upload both hit the same server routes web does. Export opens the PDF
+    in the system browser (no in-app share sheet yet); import genuinely
+    uploads a PDF via `expo-document-picker` + a raw multipart `fetch` (not
+    `src/lib/api.ts`'s `callApi`, which hardcodes JSON) to
+    `app/api/generic-invoice-import/parse`, then review/commit exactly like
+    web's `InvoiceImportModal.tsx`.
   `src/lib/dashboardWidgets/{types,compute,relativeDates}.ts` are verbatim
   copies of their web counterparts (pure logic, zero React/Next.js deps)
   kept byte-for-byte identical for easy re-syncing; `src/lib/companyDashboards.ts`
-  adapts `src/lib/records.ts`'s existing field/record fetching into the
-  shape that logic expects, reusing rather than re-deriving mobile's own
-  schema plumbing. Building/editing a dashboard is still web-only (see
-  "Custom tables & boards" above).
+  adapts `src/lib/records.ts`'s existing field/record fetching (system
+  tables) or `customTableDashboardData.ts` (custom tables) into the shape
+  that logic expects. Every relation-type field (across grids, pickers, and
+  quick-add) resolves to its target's real label via
+  `src/lib/dashboardWidgets/relationResolution.ts`, never a raw id or a
+  "(linked record)" placeholder -- a linked Matter also gets its
+  per-company matter number prepended (`src/lib/matterNumberDisplay.ts`),
+  matching `RelationPicker.tsx`'s format on web. Building/editing a
+  dashboard is still web-only (see "Custom tables & boards" above).
 - **Shared pages** (More -> Shared pages, `src/app/(app)/more/public/`) --
   native staff-side views of the three "public page" features that are
   actually used in production (see `src/lib/publicTaskPages.ts`,
@@ -185,16 +287,15 @@ text sent immediately -- see `AiChatThread`'s `initialQuery` prop and
 
 ## What's not built yet (backlog)
 
-- **The rest of the dashboard-widget engine** -- the ~10 trust-accounting
-  report widgets, document export/import, embedding a shared page as a
-  dashboard-canvas widget (the standalone screens themselves are built,
-  see "Shared pages" below -- just not the `public_task_page`/
-  `public_document_page`/`public_client_update_page` widget types that
-  embed one inline on a board), filter bars, and any board sourced from a
-  genuine custom table rather than a system table. See the Dashboards
-  entry above for exactly what's covered today and
-  where the seams are; porting the rest is incremental from
-  here, not a rewrite.
+- **`finance_model_search`/`residual_land_solver` dashboard widgets** --
+  deliberately not ported (zero production usage, see "Shared pages"
+  below); still show "open on web". Every other dashboard-widget type is
+  covered -- see the Dashboards entry above for exactly what each one drops
+  vs its web counterpart.
+- **In-app PDF download/share** -- `document_export`/`ledes_export` open
+  the generated PDF in the system browser rather than an in-app share
+  sheet; would need `expo-file-system` alongside the `expo-document-picker`
+  `invoice_import` already added.
 - **Outlook/Gmail, SMS, billing, marketplace screens** -- the Bearer-auth
   plumbing (`src/lib/api.ts`) and the Core CRM screens above prove the
   pattern works; these four still just open the web dashboard.

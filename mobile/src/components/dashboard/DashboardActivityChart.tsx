@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Polygon, Polyline } from 'react-native-svg';
 
+import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { bucketKey } from '@/lib/dashboardWidgets/compute';
-import type { ChartGranularity, ChartType } from '@/lib/dashboardWidgets/types';
+import { bucketKey, computeChartSeries } from '@/lib/dashboardWidgets/compute';
+import type { ChartGranularity, ChartType, ChartWidget } from '@/lib/dashboardWidgets/types';
 import type { ChartSeriesResult } from '@/lib/dashboardWidgets/compute';
+import type { CustomTableField, CustomTableRecord } from '@/lib/dashboardWidgets/customTableTypes';
 
 // Simplified native port of components/dashboard/DashboardActivityChart.tsx.
 // Deliberately drops three things the web version has: the day-granularity
@@ -45,7 +47,12 @@ export function DashboardActivityChart({
   chartType?: ChartType;
 }) {
   const theme = useTheme();
-  const [hiddenSeries, setHiddenSeries] = useState<Set<number>>(new Set());
+  // Non-billable series start hidden -- day-to-day use rarely needs that
+  // number, and it's one tap on the legend to bring back. Anything else
+  // starts visible, same as before.
+  const [hiddenSeries, setHiddenSeries] = useState<Set<number>>(
+    () => new Set(series.map((s, i) => (/non-?billable/i.test(s.label) ? i : -1)).filter((i) => i >= 0)),
+  );
   const [tappedBucket, setTappedBucket] = useState<string | null>(null);
 
   const visibleIndexes = series.map((_, i) => i).filter((i) => !hiddenSeries.has(i));
@@ -193,7 +200,62 @@ export function DashboardActivityChart({
   );
 }
 
+const GRANULARITY_OPTIONS: ChartGranularity[] = ['week', 'day'];
+
+// Owns the day/week toggle so DashboardWidgetRenderer.tsx's chart case can
+// stay a plain computeChartSeries()-then-render call for every other
+// widget type. Defaults to week instead of whatever the web builder
+// authored (usually day, since that's compute.ts's own fallback) -- daily
+// points on a small screen are dense and rarely what someone actually
+// wants first; day is one tap away via the toggle. A chart explicitly
+// authored at 'month' granularity is left alone (no day/week toggle makes
+// sense there).
+export function ChartWidgetContainer({
+  config,
+  records,
+  fieldById,
+  chartType,
+}: {
+  config: ChartWidget['config'];
+  records: CustomTableRecord[];
+  fieldById: Map<string, CustomTableField>;
+  chartType?: ChartType;
+}) {
+  const theme = useTheme();
+  const authoredGranularity = config.granularity ?? 'day';
+  const togglable = authoredGranularity !== 'month';
+  const [granularity, setGranularity] = useState<ChartGranularity>(togglable ? 'week' : authoredGranularity);
+
+  const series = useMemo(
+    () => computeChartSeries({ ...config, granularity }, records, fieldById),
+    [config, granularity, records, fieldById],
+  );
+
+  return (
+    <View style={{ gap: 8 }}>
+      {togglable && (
+        <View style={[styles.granularityGroup, { backgroundColor: theme.backgroundSelected }]}>
+          {GRANULARITY_OPTIONS.map((g) => (
+            <Pressable
+              key={g}
+              onPress={() => setGranularity(g)}
+              style={[styles.granularityOption, granularity === g && { backgroundColor: theme.backgroundElement }]}
+            >
+              <Text style={{ color: granularity === g ? theme.accent : theme.textSecondary, fontSize: 10, fontWeight: '800' }}>
+                {g === 'week' ? 'Weekly' : 'Daily'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+      <DashboardActivityChart series={series} granularity={granularity} chartType={chartType} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  granularityGroup: { flexDirection: 'row', alignSelf: 'flex-start', borderRadius: Radii.pill, padding: 2 },
+  granularityOption: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radii.pill },
   card: { padding: 14, borderRadius: 16, borderWidth: 1 },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },

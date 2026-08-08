@@ -86,6 +86,11 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
   const [ourReference, setOurReference] = useState('');
   const [yourReference, setYourReference] = useState('');
   const [professionalFeesDescription, setProfessionalFeesDescription] = useState('');
+  // Flexible/Standard template only -- free-text extra context beyond the
+  // fee/disbursement breakdown (see generateInvoicePdf.ts's "ADDITIONAL
+  // DETAILS" section). Always optional, unlike professionalFeesDescription
+  // this isn't a substitute for anything else on the invoice.
+  const [additionalDetails, setAdditionalDetails] = useState('');
   const [matterName, setMatterName] = useState('');
   // AI-drafted candidate for professionalFeesDescription -- shown as a
   // preview the admin explicitly adopts (or discards), never auto-applied,
@@ -448,6 +453,7 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
         our_reference: ourReference || null,
         your_reference: yourReference || null,
         professional_fees_description: professionalFeesDescription.trim() || null,
+        additional_details: additionalDetails.trim() || null,
         show_professional_fees_table: isDetailedTemplate ? showProfessionalFeesTable : null,
         show_summary_fees_by_lawyer_table: isDetailedTemplate ? showSummaryFeesByLawyerTable : null,
         issue_date: issueDate,
@@ -631,6 +637,17 @@ export default function CreateInvoiceModal({ matterId, companyId, userId, onClos
                       <input type="checkbox" checked={showSummaryFeesByLawyerTable} onChange={e => setShowSummaryFeesByLawyerTable(e.target.checked)} />
                       Include the "Summary Fees by Lawyer" table
                     </label>
+                  </div>
+                )}
+                {!isDetailedTemplate && (
+                  <div className="col-span-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Additional details (optional)</label>
+                    <textarea
+                      value={additionalDetails} onChange={e => setAdditionalDetails(e.target.value)}
+                      rows={2} placeholder="e.g. a project summary or a special payment arrangement to show on this invoice"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-2.5 px-4 text-sm font-medium outline-none resize-none"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Shown in its own "Additional details" section on the invoice, below the totals.</p>
                   </div>
                 )}
                 {professionalFeesDescriptionRequired && (

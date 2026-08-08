@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { ensureStaffEntity } from "@/lib/services/staffEntityService";
 import BrandMark from "@/components/marketing/BrandMark";
+import { useTurnstileToken } from "@/components/marketing/TurnstileWidget";
 import {
   COUNTRIES, COUNTRY_IDENTIFIERS, validateIdentifiers, identifiersToRpcParams,
   type CountryCode, type IdentifierValues,
@@ -98,7 +99,7 @@ function LoginPageInner() {
       if (session) {
         // If logged in with a token, handle joining the company
         if (inviteToken) {
-          handleTokenJoin(session.user.id);
+          handleTokenJoin();
         } else {
           router.replace(postLoginPath);
         }
@@ -155,41 +156,23 @@ function LoginPageInner() {
     }
   };
 
-  // Handle joining an existing company (called when already logged in with token)
-  const handleTokenJoin = async (userId: string) => {
+  // Handle joining an existing company (called when already logged in with token).
+  // Goes through /api/join-company (service role) rather than writing
+  // team_members/registration_tokens directly -- both have admin-only RLS
+  // write policies that a brand-new operator-role invitee can't satisfy
+  // with their own session yet. See joinCompanyWithToken's header comment.
+  const handleTokenJoin = async () => {
     if (!inviteToken || !tokenData?.company_id) {
       router.replace(postLoginPath);
       return;
     }
 
     try {
-      // Add to company_memberships
-      await supabase.from('company_memberships').upsert({
-        company_id: tokenData.company_id,
-        user_id: userId,
-        role: tokenData.role || 'operator',
-      }, { onConflict: 'company_id,user_id' });
-
-      await ensureStaffEntity(supabase, tokenData.company_id, userId);
-
-      // Switch active company
-      await supabase.from('profiles')
-        .update({ active_company_id: tokenData.company_id })
-        .eq('id', userId);
-
-      // Add to default team if specified on the token
-      if (tokenData.default_team_id) {
-        await supabase.from('team_members').upsert({
-          team_id: tokenData.default_team_id,
-          profile_id: userId,
-        }, { onConflict: 'team_id,profile_id' });
-      }
-
-      // Mark token used
-      await supabase.from('registration_tokens')
-        .update({ used_at: new Date().toISOString() })
-        .eq('token', inviteToken);
-
+      await fetch('/api/join-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: inviteToken }),
+      });
       router.replace(postLoginPath);
     } catch {
       router.replace(postLoginPath);
@@ -259,42 +242,19 @@ function LoginPageInner() {
     // before is sitting in localStorage).
     document.cookie = "nk_just_logged_in=1; path=/; max-age=60; SameSite=Lax";
 
-    const userId = data.user.id;
-
-    // If there's a valid company invite token, join that company
+    // If there's a valid company invite token, join that company via
+    // /api/join-company (service role) -- see handleTokenJoin's comment.
     if (inviteToken && tokenValid && tokenData?.company_id) {
       try {
-        // Add to company_memberships
-        const { error: memberErr } = await supabase
-          .from('company_memberships')
-          .upsert({
-            company_id: tokenData.company_id,
-            user_id: userId,
-            role: tokenData.role || 'operator',
-          }, { onConflict: 'company_id,user_id' });
-
-        if (memberErr) console.error('membership error:', memberErr);
-
-        await ensureStaffEntity(supabase, tokenData.company_id, userId);
-
-        // Switch active company to the invited company
-        await supabase.from('profiles')
-          .update({ active_company_id: tokenData.company_id })
-          .eq('id', userId);
-
-        // Add to default team if specified on the token
-        if (tokenData.default_team_id) {
-          await supabase.from('team_members').upsert({
-            team_id: tokenData.default_team_id,
-            profile_id: userId,
-          }, { onConflict: 'team_id,profile_id' });
+        const res = await fetch('/api/join-company', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: inviteToken }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => null);
+          console.error('Token join error:', json?.error);
         }
-
-        // Mark token as used
-        await supabase.from('registration_tokens')
-          .update({ used_at: new Date().toISOString() })
-          .eq('token', inviteToken);
-
       } catch (err) {
         console.error('Token join error:', err);
         // Don't block login even if join fails
@@ -359,7 +319,8 @@ function LoginPageInner() {
 
       if (isJoinInvite && tokenData?.company_id) {
         // ── Join existing company ──────────────────────────────
-        // Create profile first
+        // Create profile first -- /api/join-company only updates
+        // active_company_id on an existing profile, it doesn't create one.
         await supabase.from('profiles').upsert({
           id: userId,
           full_name: fullName || email.split('@')[0],
@@ -369,27 +330,21 @@ function LoginPageInner() {
           is_active: true,
         }, { onConflict: 'id' });
 
-        // Add to memberships
-        await supabase.from('company_memberships').upsert({
-          company_id: tokenData.company_id,
-          user_id: userId,
-          role: tokenData.role || 'operator',
-        }, { onConflict: 'company_id,user_id' });
-
-        await ensureStaffEntity(supabase, tokenData.company_id, userId);
-
-        // Add to default team if specified on the token
-        if (tokenData.default_team_id) {
-          await supabase.from('team_members').upsert({
-            team_id: tokenData.default_team_id,
-            profile_id: userId,
-          }, { onConflict: 'team_id,profile_id' });
+        // Membership + team assignment + marking the token used all go
+        // through /api/join-company (service role) -- see
+        // handleTokenJoin's comment for why the raw writes this used to do
+        // silently failed for operator-role invites.
+        if (inviteToken) {
+          const res = await fetch('/api/join-company', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: inviteToken }),
+          });
+          if (!res.ok) {
+            const json = await res.json().catch(() => null);
+            console.error('Token join error:', json?.error);
+          }
         }
-
-        // Mark token used
-        await supabase.from('registration_tokens')
-          .update({ used_at: new Date().toISOString() })
-          .eq('token', inviteToken);
 
       } else {
         // ── Create new company (original flow) ─────────────────

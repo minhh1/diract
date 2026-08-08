@@ -29,6 +29,13 @@ export interface CompanyBootstrapResult {
   userEmail: string | null;
   isAdmin: boolean;
   isSiteAdmin: boolean;
+  // The caller's company_memberships role for the active company (e.g.
+  // 'company_admin', 'manager', 'operator', 'kiosk') -- not just the
+  // isAdmin boolean derived from it. components/CompanyContext.tsx uses
+  // this directly to switch a kiosk session into its restricted shell
+  // (app/(app)/dashboard/layout.tsx); everything else in the app so far
+  // has only needed the isAdmin boolean.
+  role: string | null;
   // Team membership/leadership -- see lib/teamScope.ts's own team_members
   // query for why `teams` isn't itself company-scoped (checking membership
   // first is what keeps this leak-free). Used to gate/scope the Team
@@ -119,14 +126,16 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
 
   const cid = prof?.active_company_id || null;
   const companies = prof?.companies as any;
+  const activeRole = (allMemberships || []).find(m => m.company_id === cid)?.role ?? null;
   const result: CompanyBootstrapResult = {
     companyId: cid,
     companyName: companies?.name || null,
     companyType: companies?.company_type || null,
     userId: user.id,
     userEmail: user.email ?? null,
-    isAdmin: (allMemberships || []).find(m => m.company_id === cid)?.role === "company_admin",
+    isAdmin: activeRole === "company_admin",
     isSiteAdmin: !!prof?.is_site_admin,
+    role: activeRole,
     myTeamIds: (myTeamRows || []).map(t => t.team_id),
     ledTeamIds: (ledTeamRows || []).map(t => t.id),
     tableLabelOverrides: companies?.table_label_overrides || {},
@@ -135,33 +144,43 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
     logoUrl: companies?.logo_url || null,
   };
 
-  await warmCustomTables(user.id).catch(() => {});
-  notifyStep("tables");
-  await warmCustomDashboards(user.id).catch(() => {});
-  notifyStep("dashboards");
-  await warmRelationOptionsCache().catch(() => {});
-  notifyStep("relations");
-  // Every remaining "is this table ready to render" job, system and custom
-  // alike, in one Promise.all -- schema/customFields/relatedFields/saved-
-  // view-config/rows for the 4 system tables, schema/fields/rows/column-
-  // sort-config/default-filters for every custom table/dashboard. All four
-  // jobs warm independent data for independent tables, so there's no
-  // ordering dependency between them; the step only reports done once ALL
-  // of them finish, so the splash keeps gating on "nothing left to fetch
-  // anywhere," not just whichever table happens to run first.
-  await Promise.all([
-    warmSystemTableShells(cid).catch(() => {}),
-    warmSystemTableViewConfig(cid, user.id, result.myTeamIds).catch(() => {}),
-    startSystemTableRowPrefetch(cid).catch(() => {}),
-    warmCustomTableShells(cid, user.id, result.myTeamIds).catch(() => {}),
-    // Property Developer Quick Glance's own bespoke join -- see that
-    // warmer's own doc comment for why the generic warmers above don't
-    // already cover it. No-op for any other company type.
-    cid && result.companyType === 'Property Developer'
-      ? warmQuickGlanceProjects(cid).catch(() => {})
-      : Promise.resolve(),
-  ]);
-  notifyStep("shells");
+  // A kiosk session's active_company_id() is permanently NULL (see
+  // supabase/migrations/20260808200100_kiosk_rls_lockdown.sql), so every
+  // one of these warmers would just query tables it's denied against --
+  // skip them outright rather than firing requests that can only ever come
+  // back empty. Still notify every step so AppLoader's progress bar (which
+  // gates on all six steps firing) doesn't hang for a kiosk login.
+  if (activeRole !== "kiosk") {
+    await warmCustomTables(user.id).catch(() => {});
+    notifyStep("tables");
+    await warmCustomDashboards(user.id).catch(() => {});
+    notifyStep("dashboards");
+    await warmRelationOptionsCache().catch(() => {});
+    notifyStep("relations");
+    // Every remaining "is this table ready to render" job, system and custom
+    // alike, in one Promise.all -- schema/customFields/relatedFields/saved-
+    // view-config/rows for the 4 system tables, schema/fields/rows/column-
+    // sort-config/default-filters for every custom table/dashboard. All four
+    // jobs warm independent data for independent tables, so there's no
+    // ordering dependency between them; the step only reports done once ALL
+    // of them finish, so the splash keeps gating on "nothing left to fetch
+    // anywhere," not just whichever table happens to run first.
+    await Promise.all([
+      warmSystemTableShells(cid).catch(() => {}),
+      warmSystemTableViewConfig(cid, user.id, result.myTeamIds).catch(() => {}),
+      startSystemTableRowPrefetch(cid).catch(() => {}),
+      warmCustomTableShells(cid, user.id, result.myTeamIds).catch(() => {}),
+      // Property Developer Quick Glance's own bespoke join -- see that
+      // warmer's own doc comment for why the generic warmers above don't
+      // already cover it. No-op for any other company type.
+      cid && result.companyType === 'Property Developer'
+        ? warmQuickGlanceProjects(cid).catch(() => {})
+        : Promise.resolve(),
+    ]);
+    notifyStep("shells");
+  } else {
+    notifyStep("tables"); notifyStep("dashboards"); notifyStep("relations"); notifyStep("shells");
+  }
 
   perfLog("companyBootstrap: done");
   return result;

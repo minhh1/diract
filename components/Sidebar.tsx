@@ -9,7 +9,7 @@ import {
   ChevronRight, Sparkles, Wrench, Store, Trash2, LayoutDashboard, Receipt,
   Users, Activity, MessageCircle, MessageSquare, Users2, Gauge, Clock, Database, Copy, Share2,
   Link as LinkIcon, HeartPulse, FolderOpen, Archive, CheckSquare, Send, Lock,
-  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet, Timer, Newspaper, CalendarDays,
+  Landmark, Sun, Moon, FlaskConical, UserPlus, Wallet, Timer, Newspaper, CalendarDays, Tablet,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import Link from "next/link";
@@ -155,6 +155,8 @@ const ADMIN_LINKS = [
   { tab: 'aiDataAccess', icon: Database, label: 'AI data access' },
   { tab: 'timeTracking', icon: Timer, label: 'Time tracking' },
   { tab: 'calendar', icon: CalendarDays, label: 'Calendar' },
+  { tab: 'kioskAccounts', icon: Tablet, label: 'Kiosk accounts' },
+  { tab: 'emailCampaigns', icon: Send, label: 'Email campaigns' },
   { tab: 'propertyAutoLink', icon: Building2, label: 'Property auto-link' },
   { tab: 'company', icon: Settings, label: 'Company' },
   { tab: 'landingPages', icon: Newspaper, label: 'Landing pages' },

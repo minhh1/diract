@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,7 +23,22 @@ function subtitleFor(row: RecordRow): string | null {
   return statusFor(row) ?? (row.createdAt ? `Added ${new Date(row.createdAt).toLocaleDateString('en-AU')}` : null);
 }
 
-export function RecordListView({ tableName, basePath }: { tableName: SystemTableName; basePath: string }) {
+export function RecordListView({
+  tableName,
+  basePath,
+  selectedId,
+  onSelect,
+}: {
+  tableName: SystemTableName;
+  basePath: string;
+  // Set on iPad (master-detail split) only -- when provided, row taps and
+  // post-create navigation call this instead of router.push, so the list
+  // stays visible alongside the detail pane rather than being replaced by
+  // it. Phone never passes these, so the `onSelect ? ... : router.push(...)`
+  // branches below always take the router.push path there, unchanged.
+  selectedId?: string;
+  onSelect?: (id: string) => void;
+}) {
   const theme = useTheme();
   const gradients = useGradients();
   const router = useRouter();
@@ -39,6 +54,13 @@ export function RecordListView({ tableName, basePath }: { tableName: SystemTable
     const q = query.trim().toLowerCase();
     return rows.filter((r) => r.title.toLowerCase().includes(q));
   }, [rows, query]);
+
+  // Master-detail split shouldn't open on a blank detail pane -- mirrors
+  // the platform convention (Mail/Notes/Files) of always showing something
+  // once the list has loaded.
+  useEffect(() => {
+    if (onSelect && !selectedId && rows.length > 0) onSelect(rows[0].id);
+  }, [onSelect, selectedId, rows]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
@@ -73,8 +95,11 @@ export function RecordListView({ tableName, basePath }: { tableName: SystemTable
             const status = statusFor(item);
             return (
               <Pressable
-                onPress={() => router.push(`${basePath}/${item.id}` as never)}
-                style={[styles.row, { backgroundColor: theme.backgroundElement }]}
+                onPress={() => (onSelect ? onSelect(item.id) : router.push(`${basePath}/${item.id}` as never))}
+                style={[
+                  styles.row,
+                  { backgroundColor: selectedId === item.id ? theme.backgroundSelected : theme.backgroundElement },
+                ]}
               >
                 <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
                   {item.title}
@@ -108,7 +133,7 @@ export function RecordListView({ tableName, basePath }: { tableName: SystemTable
         onClose={() => setShowCreate(false)}
         onCreated={(id) => {
           setShowCreate(false);
-          router.push(`${basePath}/${id}` as never);
+          onSelect ? onSelect(id) : router.push(`${basePath}/${id}` as never);
         }}
       />
     </View>

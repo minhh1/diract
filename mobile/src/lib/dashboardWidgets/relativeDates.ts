@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- verbatim copy of lib/dashboardWidgets/relativeDates.ts on the web app */
 // A date filter/condition value doesn't have to be one literal date -- a
 // viewer usually means "this week's entries", not "17 July specifically",
 // and re-picking the same day every morning (or losing the filter overnight)

@@ -28,7 +28,7 @@ export async function authorizeCompanyMember() {
   // client-side for the same reason).
   const [{ data: profile }, { data: memberships }] = await Promise.all([
     admin.from("profiles").select("active_company_id").eq("id", user.id).single(),
-    admin.from("company_memberships").select("company_id, role").eq("user_id", user.id),
+    admin.from("company_memberships").select("company_id, role, custom_role_id").eq("user_id", user.id),
   ]);
   const companyId = profile?.active_company_id;
   if (!companyId) return { error: NextResponse.json({ error: "No active company" }, { status: 400 }) };
@@ -36,5 +36,18 @@ export async function authorizeCompanyMember() {
   const membership = memberships?.find(m => m.company_id === companyId);
   if (!membership) return { error: NextResponse.json({ error: "You don't have access to this company" }, { status: 403 }) };
 
-  return { admin, user, companyId, isAdmin: membership.role === "company_admin" };
+  // Company-defined custom role (supabase/migrations/20260808210000_staff_
+  // precreate_and_custom_roles.sql) -- an ADDITIVE layer on top of admin/
+  // operator, never a replacement. Only fetched when a custom role is
+  // actually assigned (the common case has none), so this never adds a
+  // round trip to the ~95 routes that only ever check isAdmin.
+  let permissions = new Set<string>();
+  if (membership.custom_role_id) {
+    const { data: role } = await admin
+      .from("company_custom_roles").select("permissions").eq("id", membership.custom_role_id).maybeSingle();
+    permissions = new Set((role?.permissions as string[] | null) || []);
+  }
+  const hasPermission = (slug: string) => permissions.has(slug);
+
+  return { admin, user, companyId, isAdmin: membership.role === "company_admin", hasPermission };
 }

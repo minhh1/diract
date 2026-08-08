@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { callApi } from './api';
+import { APP_URL } from './config';
 
 // Native port of components/public/PublicClientUpdateContent.tsx, staff
 // side only -- a logged-in company member viewing/managing the board, not
@@ -64,9 +65,12 @@ export type ClientUpdateItem = {
 
 // Admin-set, company-wide default sort/filter for one group (see
 // app/api/client-update-pages/[id]/view-defaults/route.ts) -- a viewer's
-// own choice always overrides this, it's only the starting point.
+// own choice always overrides this, it's only the starting point. Note:
+// camelCase groupId, not group_id -- lib/clientUpdatePageDetail.ts's
+// shared loader (used by both the by-slug staff route and the public
+// route) remaps the DB column itself when building this array.
 export type ClientUpdateViewDefault = {
-  group_id: string;
+  groupId: string;
   filters: { fieldId: string; values: string[] }[];
   sort: { fieldId: string; dir: 'asc' | 'desc' }[];
 };
@@ -110,6 +114,46 @@ export function useClientUpdateBoard(slug: string) {
     queryFn: async (): Promise<ClientUpdateBoard> => {
       const res = await callApi(`/api/client-update-pages/by-slug/${slug}`);
       return unwrap<ClientUpdateBoard>(res);
+    },
+  });
+}
+
+// "Preview as client" -- the SAME genuinely anonymous route an actual
+// client's browser hits (app/api/client-update-pages/public/[slug]),
+// called with a plain fetch (no Bearer token, matching
+// documentFillPages.ts's own anonymous calls) so staff can verify exactly
+// what gets shown once client_visible filtering and figure-redaction are
+// applied, before sharing the link. Read-only by design -- notes/ask-AI
+// stay on the normal staff view of the same board; this is for checking
+// visible DATA, not re-entering a write flow as if impersonating the
+// client. Maps the response into the same ClientUpdateBoard shape the
+// staff hook already produces (both come from the identical
+// lib/clientUpdatePageDetail.ts loader server-side) so the existing
+// screen's rendering/grouping/sorting logic works unchanged either way.
+export type PublicClientUpdateResult =
+  | { requiresCode: true; title: string }
+  | { requiresCode: false; board: ClientUpdateBoard };
+
+export function usePublicClientUpdateBoard(slug: string, code: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['public-client-update-board', slug, code],
+    enabled: enabled && !!slug,
+    queryFn: async (): Promise<PublicClientUpdateResult> => {
+      const qs = code ? `?code=${encodeURIComponent(code)}` : '';
+      const res = await fetch(`${APP_URL}/api/client-update-pages/public/${slug}${qs}`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`);
+      if (json.requiresCode) return { requiresCode: true, title: json.title };
+      return {
+        requiresCode: false,
+        board: {
+          page: { id: '', title: json.title, client_label: null, ai_ask_enabled: !!json.askEnabled, base_table: json.baseTable, date_format: json.dateFormat },
+          groups: json.groups ?? [],
+          fields: json.fields ?? [],
+          items: json.items ?? [],
+          viewDefaults: json.viewDefaults ?? [],
+        },
+      };
     },
   });
 }

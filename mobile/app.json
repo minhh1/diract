@@ -3,7 +3,7 @@
     "name": "Diract",
     "slug": "diract",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "diract",
     "userInterfaceStyle": "automatic",
@@ -53,7 +53,8 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-image"
+      "expo-image",
+      "expo-screen-orientation"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { useCompany } from "@/components/CompanyContext";
 import {
   Loader2, Shield, Trash2,
-  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical, Check,
+  CheckCircle2, XCircle, Plus, X, Copy, Link, Clock, GripVertical, Check, Mail, MessageSquare, ChevronDown,
 } from "lucide-react";
 import { useProgressBarWhile } from "@/components/TopProgressBar";
 import { MINH_HUYNH_USER_ID } from "@/lib/marketingPages/ids";
@@ -43,6 +43,8 @@ const AdminAiDataAccessTab = dynamic(() => import("@/components/admin/AdminAiDat
 const AdminTimeTrackingTab = dynamic(() => import("@/components/admin/AdminTimeTrackingTab"));
 const AdminCalendarTab = dynamic(() => import("@/components/admin/AdminCalendarTab"));
 const AdminPropertyAutoLinkTab = dynamic(() => import("@/components/admin/AdminPropertyAutoLinkTab"));
+const AdminKioskAccountsTab = dynamic(() => import("@/components/admin/AdminKioskAccountsTab"));
+const AdminEmailCampaignsTab = dynamic(() => import("@/components/admin/AdminEmailCampaignsTab"));
 
 interface Member {
   id: string;
@@ -57,6 +59,10 @@ interface Member {
   // entirely), in which case handleSaveRate creates it on first save.
   entityId: string | null;
   defaultRate: number | null;
+  // Company-defined role (see AdminPermissionsTab.tsx's "Custom roles"
+  // section) granting extra capabilities beyond the plain admin/operator
+  // split -- null means no custom role assigned.
+  customRoleId: string | null;
 }
 
 interface Company {
@@ -85,6 +91,11 @@ interface Token {
   used_at: string | null;
   default_team_id: string | null;
   role: string;
+  staff_entity_id: string | null;
+  // Pre-created Staff entity this invite was generated for (see the
+  // "Invites" tab's new name/email/phone fields) -- null for a plain,
+  // no-name invite link exactly as before.
+  staff_entity: { name: string; email: string | null; phone: string | null; mobile_phone: string | null } | null;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -166,6 +177,7 @@ interface AdminData {
   teams: { id: string; team_name: string }[];
   members: Member[];
   connectedEmails: string[];
+  customRoles: { id: string; name: string }[];
 }
 
 // Cached via useQuery (see AdminPage below) so revisiting Admin within
@@ -187,11 +199,12 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
     { data: teamsData },
     { data: memberships },
     { data: gmailTokens },
+    { data: customRoleData },
   ] = await Promise.all([
     supabase.from('companies').select('*').eq('id', companyId).single(),
     supabase
       .from('registration_tokens')
-      .select('*')
+      .select('*, staff_entity:staff_entity_id(name, email, phone, mobile_phone)')
       .eq('company_id', companyId)
       .order('created_at', { ascending: false }),
     // This company's own custom fields on projects (calendar sync tokens
@@ -212,7 +225,7 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
       .order('team_name'),
     supabase
       .from('company_memberships')
-      .select('user_id, role')
+      .select('user_id, role, custom_role_id')
       .eq('company_id', companyId),
     // Connected Gmail emails for source-of-truth / archive pickers.
     // Queries the company_gmail_connections view, not user_gmail_tokens
@@ -220,6 +233,11 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
     // returns your own row, so this is the only way to see who else in
     // the company is connected without exposing anyone's OAuth tokens.
     supabase.from('company_gmail_connections').select('email'),
+    supabase
+      .from('company_custom_roles')
+      .select('id, name')
+      .eq('company_id', companyId)
+      .order('display_order').order('name'),
   ]);
   perfLog("admin: batch fetch resolved");
 
@@ -255,6 +273,7 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
         is_admin: m.role === 'company_admin',
         entityId: entity?.id ?? null,
         defaultRate: entity?.default_rate ?? null,
+        customRoleId: m.custom_role_id ?? null,
       };
     });
   }
@@ -267,11 +286,12 @@ async function fetchAdminData(companyId: string): Promise<AdminData> {
     teams: teamsData || [],
     members,
     connectedEmails: (gmailTokens || []).map((t: any) => t.email).filter(Boolean),
+    customRoles: customRoleData || [],
   };
 }
 
-type AdminTab = 'members' | 'teams' | 'permissions' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink' | 'aiDataAccess' | 'timeTracking' | 'landingPages' | 'calendar';
-const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'permissions', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink', 'aiDataAccess', 'timeTracking', 'landingPages', 'calendar'];
+type AdminTab = 'members' | 'teams' | 'permissions' | 'defaults' | 'company' | 'invites' | 'gmail' | 'gmailSync' | 'virtualComputers' | 'whatsapp' | 'msTeams' | 'oneDrive' | 'xero' | 'email' | 'aiAssistant' | 'perf' | 'platformHealth' | 'archiveRequests' | 'leadEmailAssignments' | 'propertyAutoLink' | 'aiDataAccess' | 'timeTracking' | 'landingPages' | 'calendar' | 'kioskAccounts' | 'emailCampaigns';
+const ADMIN_TABS: AdminTab[] = ['members', 'teams', 'permissions', 'defaults', 'company', 'invites', 'gmail', 'gmailSync', 'virtualComputers', 'whatsapp', 'msTeams', 'oneDrive', 'xero', 'email', 'aiAssistant', 'perf', 'platformHealth', 'archiveRequests', 'leadEmailAssignments', 'propertyAutoLink', 'aiDataAccess', 'timeTracking', 'landingPages', 'calendar', 'kioskAccounts', 'emailCampaigns'];
 const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   members: 'Members', teams: 'Teams', permissions: 'Permissions', defaults: 'Default Settings', invites: 'Invite links',
   gmail: 'Gmail', gmailSync: 'Gmail sync', whatsapp: 'WhatsApp', msTeams: 'Microsoft Teams',
@@ -279,7 +299,7 @@ const ADMIN_TAB_LABELS: Record<AdminTab, string> = {
   aiAssistant: 'AI Assistant', virtualComputers: 'Virtual computers', company: 'Company', perf: 'Performance',
   platformHealth: 'Platform health', archiveRequests: 'Archive requests', leadEmailAssignments: 'Lead email assignments',
   propertyAutoLink: 'Property auto-link', aiDataAccess: 'AI data access', timeTracking: 'Time tracking',
-  landingPages: 'Landing pages', calendar: 'Calendar',
+  landingPages: 'Landing pages', calendar: 'Calendar', kioskAccounts: 'Kiosk accounts', emailCampaigns: 'Email campaigns',
 };
 
 export default function AdminPage() {
@@ -314,6 +334,14 @@ function AdminPageInner() {
   const unauthorized = !companyLoading && (!companyId || (!isAdmin && ledTeamIds.length === 0));
   const [saving, setSaving] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Which member's role popup is open -- replaces the old binary Admin/
+  // Operator toggle button with a real picker across all three company
+  // roles (Admin/Manager/Operator). Kiosk is deliberately not offered
+  // here: it's a non-human, admin-created login with its own email/
+  // password (see components/admin/AdminKioskAccountsTab.tsx), not
+  // something an existing person's account should be silently flipped
+  // into -- that would lock them out of their own login.
+  const [roleMenuOpenId, setRoleMenuOpenId] = useState<string | null>(null);
 
   // Default-rate inline editor -- same editingId + Enter/Escape pattern as
   // AdminTeamsTab.tsx's rename control.
@@ -345,6 +373,7 @@ function AdminPageInner() {
   const members = adminData?.members ?? [];
   const tokens = adminData?.tokens ?? [];
   const allTeams = adminData?.teams ?? [];
+  const allCustomRoles = adminData?.customRoles ?? [];
   const connectedEmails = adminData?.connectedEmails ?? [];
   const projectCustomFields = adminData?.customFields ?? [];
 
@@ -382,6 +411,16 @@ function AdminPageInner() {
   // Invite token default team + role
   const [newTokenTeamId, setNewTokenTeamId] = useState<string>('');
   const [newTokenRole, setNewTokenRole] = useState<'operator' | 'company_admin'>('operator');
+  // Pre-created staff profile (optional) -- captured up front so a phone/
+  // email exists for SMS/email rostering before this person has ever
+  // logged in. Becomes a Staff entities row immediately (entity_type=
+  // 'Staff', linked_profile_id null); real signup with this token claims
+  // it via linkStaffEntity() instead of ensureStaffEntity() creating a
+  // second, blank one.
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
 
   useEffect(() => { perfLogPageStart("admin", "admin"); }, []);
   useEffect(() => {
@@ -420,19 +459,18 @@ function AdminPageInner() {
     setSyncToCompanyCalendar(!!comp.sync_tasks_to_company_calendar);
   }
 
-  const handleToggleAdmin = async (member: Member) => {
+  const handleSetRole = async (member: Member, role: 'company_admin' | 'manager' | 'operator') => {
+    setRoleMenuOpenId(null);
+    if (role === member.role) return;
     setSaving(member.id);
-    const newIsAdmin = !member.is_admin;
     await supabase.from('company_memberships')
-      .update({ role: (newIsAdmin ? 'company_admin' : 'operator') as any })
+      .update({ role: role as any })
       .eq('user_id', member.id)
       .eq('company_id', company!.id);
     queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
       ...old,
       members: old.members.map(m =>
-        m.id === member.id
-          ? { ...m, is_admin: newIsAdmin, role: newIsAdmin ? 'company_admin' : 'operator' }
-          : m
+        m.id === member.id ? { ...m, role, is_admin: role === 'company_admin' } : m
       ),
     }));
     setSaving(null);
@@ -588,6 +626,30 @@ function AdminPageInner() {
   const handleGenerateToken = async () => {
     if (!userId || !company) return;
     setGeneratingToken(true);
+
+    // Pre-create a Staff entity when a name was typed in, so a phone/email
+    // exists for SMS/email rostering before this person ever logs in --
+    // linkStaffEntity() (lib/services/staffEntityService.ts) claims this
+    // exact row on real signup instead of ensureStaffEntity() creating a
+    // second, blank one.
+    let staffEntityId: string | null = null;
+    if (newStaffName.trim()) {
+      const { data: staffEntity, error: staffError } = await supabase
+        .from('entities')
+        .insert({
+          company_id: company.id,
+          name: newStaffName.trim(),
+          entity_type: 'Staff',
+          email: newStaffEmail.trim() || null,
+          phone: newStaffPhone.trim() || null,
+          mobile_phone: newStaffPhone.trim() || null,
+        })
+        .select('id')
+        .single();
+      if (staffError) { alert(staffError.message); setGeneratingToken(false); return; }
+      staffEntityId = staffEntity?.id ?? null;
+    }
+
     const { data } = await supabase
       .from('registration_tokens')
       .insert({
@@ -596,13 +658,17 @@ function AdminPageInner() {
         note: newTokenNote.trim() || null,
         default_team_id: newTokenTeamId || null,
         role: newTokenRole,
+        staff_entity_id: staffEntityId,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       })
-      .select()
+      .select('*, staff_entity:staff_entity_id(name, email, phone, mobile_phone)')
       .single();
     setNewTokenNote('');
     setNewTokenTeamId('');
     setNewTokenRole('operator');
+    setNewStaffName('');
+    setNewStaffEmail('');
+    setNewStaffPhone('');
     setGeneratingToken(false);
     if (data) queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
       ...old,
@@ -622,6 +688,19 @@ function AdminPageInner() {
     }
   };
 
+  const handleAssignCustomRole = async (member: Member, customRoleId: string | null) => {
+    setSaving(member.id);
+    await supabase.from('company_memberships')
+      .update({ custom_role_id: customRoleId })
+      .eq('user_id', member.id)
+      .eq('company_id', company!.id);
+    queryClient.setQueryData(adminQueryKey, (old?: AdminData) => old && ({
+      ...old,
+      members: old.members.map(m => m.id === member.id ? { ...m, customRoleId } : m),
+    }));
+    setSaving(null);
+  };
+
   const handleRevokeToken = async (tokenId: string) => {
     await supabase.from('registration_tokens')
       .update({ used_at: new Date().toISOString() })
@@ -639,6 +718,24 @@ function AdminPageInner() {
     navigator.clipboard.writeText(getRegistrationLink(token));
     setCopied(token);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  // Sends the registration link directly to the pre-created staff profile's
+  // email/phone (app/api/admin/invites/send/route.ts) instead of the admin
+  // having to copy the link into their own email/SMS client.
+  const handleSendInvite = async (tokenId: string, channel: 'email' | 'sms') => {
+    setSendingInviteId(`${tokenId}:${channel}`);
+    try {
+      const res = await fetch('/api/admin/invites/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tokenId, channel }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(json.error || `Could not send ${channel === 'email' ? 'email' : 'SMS'}`); return; }
+      alert(`Invite sent by ${channel === 'email' ? 'email' : 'SMS'}.`);
+    } finally {
+      setSendingInviteId(null);
+    }
   };
 
   // ── Unauthorized ─────────────────────────────────────
@@ -733,15 +830,40 @@ function AdminPageInner() {
                           <p className="text-[13px] font-bold text-slate-800 truncate">
                             {member.full_name || '-'}
                           </p>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                            member.role === 'company_admin'
-                              ? 'bg-amber-100 text-amber-700'
-                              : member.role === 'manager'
-                              ? 'bg-indigo-100 text-indigo-700'
-                              : 'bg-slate-100 text-slate-500'
-                          }`}>
-                            {ROLE_LABELS[member.role] || member.role}
-                          </span>
+                          <div className="relative">
+                            <button
+                              onClick={() => setRoleMenuOpenId(roleMenuOpenId === member.id ? null : member.id)}
+                              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase transition-colors ${
+                                member.role === 'company_admin'
+                                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                  : member.role === 'manager'
+                                  ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                              }`}
+                            >
+                              {ROLE_LABELS[member.role] || member.role}
+                              <ChevronDown size={9} />
+                            </button>
+                            {roleMenuOpenId === member.id && (
+                              <>
+                                <div className="fixed inset-0 z-10" onClick={() => setRoleMenuOpenId(null)} />
+                                <div className="absolute left-0 top-full mt-1 z-20 w-36 bg-white border border-slate-200 rounded-2xl shadow-lg py-1.5 normal-case">
+                                  {(['company_admin', 'manager', 'operator'] as const).map(r => (
+                                    <button
+                                      key={r}
+                                      onClick={() => handleSetRole(member, r)}
+                                      className={`w-full flex items-center justify-between px-3.5 py-2 text-[11px] font-medium text-left hover:bg-slate-50 transition-colors ${
+                                        member.role === r ? 'text-slate-800 font-bold' : 'text-slate-500'
+                                      }`}
+                                    >
+                                      {ROLE_LABELS[r]}
+                                      {member.role === r && <Check size={11} className="text-indigo-600" />}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
                           {!member.is_active && (
                             <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-red-100 text-red-500">
                               Inactive
@@ -761,6 +883,18 @@ function AdminPageInner() {
                               <option value="">Assign to team...</option>
                               {allTeams.map(t => (
                                 <option key={t.id} value={t.id}>{t.team_name}</option>
+                              ))}
+                            </select>
+                          )}
+                          {allCustomRoles.length > 0 && !member.is_admin && (
+                            <select
+                              value={member.customRoleId ?? ''}
+                              onChange={e => handleAssignCustomRole(member, e.target.value || null)}
+                              className="text-[11px] text-slate-500 border border-slate-200 rounded-full px-3 py-1 outline-none bg-white hover:border-indigo-300 cursor-pointer"
+                            >
+                              <option value="">No custom role</option>
+                              {allCustomRoles.map(r => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
                               ))}
                             </select>
                           )}
@@ -803,17 +937,6 @@ function AdminPageInner() {
                       ) : (
                         <>
                           <button
-                            onClick={() => handleToggleAdmin(member)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
-                              member.is_admin
-                                ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                : 'bg-slate-50 text-slate-500 hover:bg-amber-50 hover:text-amber-600'
-                            }`}
-                          >
-                            <Shield size={11} />
-                            {member.is_admin ? 'Admin' : 'Make admin'}
-                          </button>
-                          <button
                             onClick={() => handleToggleActive(member)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
                               member.is_active
@@ -853,6 +976,33 @@ function AdminPageInner() {
                     Share this link with a new team member. Each link can only be used once and
                     expires in 7 days. Choose the role and (optionally) the team they join as below.
                   </p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                    Pre-create their staff profile <span className="font-normal text-slate-300">(optional -- name, email, phone exist immediately for rostering, before they log in)</span>
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      value={newStaffName}
+                      onChange={e => setNewStaffName(e.target.value)}
+                      placeholder="Full name"
+                      className="bg-slate-50 border border-slate-200 rounded-full px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                    <input
+                      value={newStaffEmail}
+                      onChange={e => setNewStaffEmail(e.target.value)}
+                      placeholder="Email"
+                      type="email"
+                      className="bg-slate-50 border border-slate-200 rounded-full px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                    <input
+                      value={newStaffPhone}
+                      onChange={e => setNewStaffPhone(e.target.value)}
+                      placeholder="Phone number"
+                      type="tel"
+                      className="bg-slate-50 border border-slate-200 rounded-full px-4 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <input
@@ -951,8 +1101,11 @@ function AdminPageInner() {
                       </div>
 
                       <div className="flex-1 min-w-0">
+                        {token.staff_entity && (
+                          <p className="text-[13px] font-bold text-slate-700">{token.staff_entity.name}</p>
+                        )}
                         {token.note && (
-                          <p className="text-[13px] font-bold text-slate-700 mb-1">{token.note}</p>
+                          <p className={token.staff_entity ? "text-[11px] text-slate-400 mb-1" : "text-[13px] font-bold text-slate-700 mb-1"}>{token.note}</p>
                         )}
                         <p className="text-[10px] text-slate-400 font-medium mb-1">
                           Role: <span className={token.role === 'company_admin' ? 'text-indigo-500' : ''}>{ROLE_LABELS[token.role] || token.role}</span>
@@ -985,6 +1138,28 @@ function AdminPageInner() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
+                        {isActive && token.staff_entity?.email && (
+                          <button
+                            onClick={() => handleSendInvite(token.id, 'email')}
+                            disabled={sendingInviteId === `${token.id}:email`}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition-all disabled:opacity-50"
+                            title={`Email the link to ${token.staff_entity.email}`}
+                          >
+                            {sendingInviteId === `${token.id}:email` ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
+                            Email
+                          </button>
+                        )}
+                        {isActive && (token.staff_entity?.phone || token.staff_entity?.mobile_phone) && (
+                          <button
+                            onClick={() => handleSendInvite(token.id, 'sms')}
+                            disabled={sendingInviteId === `${token.id}:sms`}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition-all disabled:opacity-50"
+                            title={`Text the link to ${token.staff_entity.phone || token.staff_entity.mobile_phone}`}
+                          >
+                            {sendingInviteId === `${token.id}:sms` ? <Loader2 size={11} className="animate-spin" /> : <MessageSquare size={11} />}
+                            SMS
+                          </button>
+                        )}
                         {isActive && (
                           <button
                             onClick={() => handleCopy(token.token)}
@@ -1137,6 +1312,16 @@ function AdminPageInner() {
           {/* ── Calendar ── */}
           {activeTab === 'calendar' && companyId && (
             <AdminCalendarTab companyId={companyId} />
+          )}
+
+          {/* ── Kiosk accounts ── */}
+          {activeTab === 'kioskAccounts' && companyId && (
+            <AdminKioskAccountsTab companyId={companyId} />
+          )}
+
+          {/* ── Email campaigns ── */}
+          {activeTab === 'emailCampaigns' && companyId && (
+            <AdminEmailCampaignsTab companyId={companyId} />
           )}
 
           {/* ── Property auto-link ── */}

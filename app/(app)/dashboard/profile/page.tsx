@@ -45,6 +45,7 @@ export default function ProfilePage() {
                 email={email}
               />
               {profile?.id && <SecuritySection key={profile.id} userId={profile.id} />}
+              {profile?.id && <CheckinPinSection key={profile.id} />}
               {profile?.id && <SignoffSection key={profile.id} userId={profile.id} />}
               {profile?.id && <NotificationPreferencesSection key={profile.id} userId={profile.id} />}
             </>
@@ -567,6 +568,107 @@ function NotificationPreferencesSection({ userId }: { userId: string }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── CHECK-IN PIN & QR ────────────────────────────────────────────
+// Only relevant to someone with a linked Staff entity (see entities.
+// linked_profile_id) -- renders nothing for an office-only admin at a
+// company that's never rostered anyone. The PIN gates the kiosk's tap-to-
+// check-in/out (components/kiosk/CheckInPanel.tsx); the QR code is just a
+// faster way for the kiosk's camera to find your name in that list instead
+// of scrolling to tap it -- it's not itself a secret, the PIN still applies
+// afterwards. See supabase/migrations/20260808230000_staff_checkin_pin.sql.
+function CheckinPinSection() {
+  const [loading, setLoading] = useState(true);
+  const [relevant, setRelevant] = useState(false);
+  const [hasPin, setHasPin] = useState(false);
+  const [pin, setPin] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [loadingQr, setLoadingQr] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const res = await fetch("/api/staff/checkin-pin");
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) {
+        setRelevant(!!data.hasStaffEntity);
+        setHasPin(!!data.hasPin);
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const savePin = async () => {
+    setMessage(null);
+    if (!/^\d{4,6}$/.test(pin)) { setMessage({ type: "error", text: "PIN must be 4-6 digits" }); return; }
+    setSaving(true);
+    const res = await fetch("/api/staff/checkin-pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    const data = await res.json().catch(() => null);
+    setSaving(false);
+    if (!res.ok) { setMessage({ type: "error", text: data?.error || "Could not save PIN" }); return; }
+    setHasPin(true);
+    setPin("");
+    setMessage({ type: "ok", text: "Check-in PIN saved" });
+  };
+
+  const showQr = async () => {
+    setLoadingQr(true);
+    const res = await fetch("/api/staff/checkin-qr");
+    const data = await res.json().catch(() => null);
+    setLoadingQr(false);
+    if (res.ok && data?.qrCode) setQrCode(data.qrCode);
+  };
+
+  if (loading || !relevant) return null;
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-[32px] p-8 shadow-sm">
+      <div className="flex items-center gap-2">
+        <KeyRound size={16} className="text-rose-600" />
+        <h2 className="text-[15px] font-medium text-slate-900">Check-in PIN</h2>
+      </div>
+      <p className="text-[12px] text-slate-400 mt-1">
+        {hasPin
+          ? "Used at the kiosk to check yourself in and out. Enter a new one below to change it."
+          : "Set a PIN so only you can check yourself in and out at the kiosk."}
+      </p>
+      <div className="mt-4 flex items-center gap-3">
+        <input
+          value={pin}
+          onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          inputMode="numeric"
+          placeholder={hasPin ? "New PIN" : "4-6 digit PIN"}
+          className="w-40 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-[14px] font-mono tracking-widest text-slate-900 focus:outline-none focus:border-indigo-500 transition-all"
+        />
+        <button onClick={savePin} disabled={saving || !pin}
+          className="px-5 py-2.5 bg-slate-900 text-white rounded-full text-[11px] font-bold hover:bg-slate-800 transition-all disabled:opacity-40 disabled:cursor-default">
+          {saving ? <Loader2 size={14} className="animate-spin" /> : hasPin ? "Change PIN" : "Set PIN"}
+        </button>
+      </div>
+      {message && <MessageRow message={message} />}
+
+      <div className="mt-6 pt-6 border-t border-slate-100">
+        <p className="text-[12px] text-slate-400 mb-3">
+          Or show this on your phone at the kiosk instead of finding your name in the list.
+        </p>
+        {qrCode ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={qrCode} alt="Your check-in QR code" className="h-40 w-40 rounded-2xl border border-slate-200" />
+        ) : (
+          <button onClick={showQr} disabled={loadingQr}
+            className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-full text-[11px] font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all disabled:opacity-40 disabled:cursor-default">
+            {loadingQr ? <Loader2 size={14} className="animate-spin" /> : "Show my check-in QR code"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

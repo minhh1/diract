@@ -9,8 +9,8 @@ import { authorizeCompanyMember } from "@/lib/documentTemplateAuth";
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ shiftId: string }> }) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin, companyId, isAdmin } = auth;
-  if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  const { admin, companyId, isAdmin, hasPermission } = auth;
+  if (!isAdmin && !hasPermission("roster.edit")) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   const { shiftId } = await params;
 
   const body = await req.json().catch(() => null);
@@ -39,8 +39,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ sh
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ shiftId: string }> }) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin, companyId, isAdmin } = auth;
-  if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  const { admin, companyId, isAdmin, hasPermission } = auth;
+  if (!isAdmin && !hasPermission("roster.edit")) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   const { shiftId } = await params;
 
   const { error } = await admin.from("roster_shifts").delete().eq("id", shiftId).eq("company_id", companyId);

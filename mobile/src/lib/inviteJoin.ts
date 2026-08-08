@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { ensureStaffEntity } from './staffEntityService';
+import { callApi } from './api';
 
 export type InviteTokenData = {
   id: string;
@@ -39,27 +39,27 @@ export async function validateInviteToken(token: string): Promise<InviteTokenDat
   };
 }
 
-// Mirrors handleTokenJoin()/the invite-join branch of handleLogin() in
-// app/login/page.tsx: adds the membership, provisions the Staff entity,
-// switches the active company, assigns the default team, and burns the
-// token. Best-effort by design -- a failed join here shouldn't strand an
-// otherwise-successful sign-in.
-export async function joinCompanyWithToken(userId: string, invite: InviteTokenData): Promise<void> {
+// Calls the web app's /api/join-company (service role), which adds the
+// membership, provisions the Staff entity, switches the active company,
+// assigns the default team, and burns the token -- all server-side.
+// Doing these writes directly from the client (as this used to) silently
+// failed for operator-role invites: team_members and registration_tokens
+// both have admin-only RLS write policies that a brand-new operator
+// invitee can't satisfy with their own session yet. See
+// lib/services/joinCompanyWithToken.ts's header comment on the web side
+// for the full explanation. Best-effort by design -- a failed join here
+// shouldn't strand an otherwise-successful sign-in.
+export async function joinCompanyWithToken(invite: InviteTokenData): Promise<void> {
   if (!invite.company_id) return;
   try {
-    await supabase.from('company_memberships').upsert(
-      { company_id: invite.company_id, user_id: userId, role: invite.role || 'operator' },
-      { onConflict: 'company_id,user_id' },
-    );
-    await ensureStaffEntity(supabase, invite.company_id, userId);
-    await supabase.from('profiles').update({ active_company_id: invite.company_id }).eq('id', userId);
-    if (invite.default_team_id) {
-      await supabase.from('team_members').upsert(
-        { team_id: invite.default_team_id, profile_id: userId },
-        { onConflict: 'team_id,profile_id' },
-      );
+    const res = await callApi('/api/join-company', {
+      method: 'POST',
+      body: JSON.stringify({ token: invite.token }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      console.error('[joinCompanyWithToken] failed', json?.error);
     }
-    await supabase.from('registration_tokens').update({ used_at: new Date().toISOString() }).eq('token', invite.token);
   } catch (err) {
     console.error('[joinCompanyWithToken] failed', err);
   }

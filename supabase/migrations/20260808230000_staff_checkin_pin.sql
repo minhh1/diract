@@ -1,0 +1,12 @@
+-- Optional per-staff PIN, required by the kiosk (app/api/kiosk/checkins/
+-- route.ts) before it will check someone in or out once they've set one.
+-- Lives on `entities` (not `profiles`) because the kiosk identifies people
+-- by staff_entity_id and never authenticates them -- a staff member who has
+-- never logged in (the "zero login" design this whole rostering feature is
+-- built around, see 20260808190000_calendar.sql) simply has no PIN and the
+-- kiosk falls back to today's plain tap-to-toggle behaviour for them.
+-- Hashed with Node's scrypt (lib/staffCheckinPin.ts) rather than stored in
+-- Postgres via pgcrypto, so the same helper can be unit-tested and reused
+-- from both the self-service set-PIN route and the kiosk's verify step
+-- without a DB round trip for the hashing itself.
+ALTER TABLE entities ADD COLUMN IF NOT EXISTS checkin_pin_hash text;

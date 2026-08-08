@@ -1,11 +1,9 @@
-import { Suspense } from "react";
-import Sidebar from "@/components/Sidebar";
 import QueryProvider from "@/components/QueryProvider";
 import { CompanyProvider } from "@/components/CompanyContext";
 import { ProgressBarProvider } from "@/components/TopProgressBar";
 import PerfRouteTracker from "@/components/PerfRouteTracker";
-import TrialWorkspaceBanner from "@/components/TrialWorkspaceBanner";
 import BackgroundTasksTray from "@/components/BackgroundTasksTray";
+import KioskAppShell from "@/components/KioskAppShell";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,22 +12,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <ProgressBarProvider>
           <PerfRouteTracker />
           <BackgroundTasksTray />
-          <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans antialiased text-slate-900">
-            {/* COLUMN 1: Sidebar -- Sidebar itself controls width so it can collapse */}
-            <aside className="flex-shrink-0">
-              <Suspense fallback={<div className="w-72 p-10 animate-pulse bg-slate-50 h-full" />}>
-                <Sidebar />
-              </Suspense>
-            </aside>
-
-            {/* COLUMN 2: Content Area */}
-            <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-              <TrialWorkspaceBanner />
-              <div className="flex-1 overflow-y-auto">
-                {children}
-              </div>
-            </main>
-          </div>
+          {/* KioskAppShell reads role from CompanyContext and switches
+              between the normal Sidebar shell and the restricted kiosk
+              shell -- see that component's own doc comment. */}
+          <KioskAppShell>{children}</KioskAppShell>
         </ProgressBarProvider>
       </CompanyProvider>
     </QueryProvider>

@@ -171,6 +171,7 @@ export async function hydrateInvoiceForRender(
       ourReference: invoice.our_reference || null, yourReference: invoice.your_reference || null,
       periodEnd: invoice.period_end || null, paymentTermsDays: invoiceSettings.paymentTermsDays ?? 14,
       professionalFeesDescription: invoice.professional_fees_description || null,
+      additionalDetails: invoice.additional_details || null,
     },
     feeLines,
     disbursementLines,

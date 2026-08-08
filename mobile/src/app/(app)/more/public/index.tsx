@@ -1,12 +1,13 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ClipboardList, FileSignature, Users2 } from 'lucide-react-native';
+import { ClipboardList, FileSignature, Files, Users2 } from 'lucide-react-native';
 
 import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { usePublicTaskPagesList } from '@/lib/publicTaskPages';
 import { useDocumentFillPagesList } from '@/lib/documentFillPages';
 import { useClientUpdatePagesList } from '@/lib/clientUpdatePages';
+import { useCompanyPagesList } from '@/lib/companyPages';
 import { IconBadge } from '@/components/ui/IconBadge';
 
 // Lists every "shared page" (see the naming note in each lib file --
@@ -14,16 +15,21 @@ import { IconBadge } from '@/components/ui/IconBadge';
 // document-fill and client-update pages are genuinely anonymous/PIN-gated
 // links, viewed here the same way components/dashboard/*Widget.tsx embed
 // them for a logged-in staff member: same data, same APIs, no separate
-// "admin" endpoint). Three independent Supabase-backed features, not one
-// underlying table, so three separate list queries.
+// "admin" endpoint; company_pages ("Pages") is a fourth, unrelated feature
+// -- AI-authored content pages whose content is identical for every
+// viewer, fetched via the plain authenticated company_pages routes rather
+// than any public/PIN-gated one, see companyPages.ts's own header
+// comment). Four independent Supabase-backed features, not one underlying
+// table, so four separate list queries.
 export default function PublicPagesListScreen() {
   const theme = useTheme();
   const router = useRouter();
   const taskPages = usePublicTaskPagesList();
   const documentPages = useDocumentFillPagesList();
   const updatePages = useClientUpdatePagesList();
+  const companyPages = useCompanyPagesList();
 
-  const isLoading = taskPages.isLoading || documentPages.isLoading || updatePages.isLoading;
+  const isLoading = taskPages.isLoading || documentPages.isLoading || updatePages.isLoading || companyPages.isLoading;
 
   if (isLoading) {
     return (
@@ -34,7 +40,7 @@ export default function PublicPagesListScreen() {
   }
 
   const activeTaskPages = (taskPages.data ?? []).filter((p) => p.isActive);
-  const hasAny = activeTaskPages.length > 0 || (documentPages.data ?? []).length > 0 || (updatePages.data ?? []).length > 0;
+  const hasAny = activeTaskPages.length > 0 || (documentPages.data ?? []).length > 0 || (updatePages.data ?? []).length > 0 || (companyPages.data ?? []).length > 0;
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={styles.content}>
@@ -112,6 +118,29 @@ export default function PublicPagesListScreen() {
                 </View>
               </Pressable>
             ))}
+        </>
+      )}
+
+      {(companyPages.data ?? []).length > 0 && (
+        <>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>PAGES</Text>
+          {(companyPages.data ?? []).map((page) => (
+            <Pressable
+              key={page.id}
+              onPress={() => router.push({ pathname: '/more/public/pages/[id]', params: { id: page.id } } as never)}
+              style={[styles.row, { backgroundColor: theme.backgroundElement }]}
+            >
+              <View style={styles.rowLeft}>
+                <IconBadge index={3} size={38}>
+                  <Files size={17} color="#fff" />
+                </IconBadge>
+                <View>
+                  <Text style={[styles.rowLabel, { color: theme.text }]}>{page.title}</Text>
+                  <Text style={[styles.rowHint, { color: theme.textSecondary }]}>{page.status === 'draft' ? 'Draft' : page.visibility}</Text>
+                </View>
+              </View>
+            </Pressable>
+          ))}
         </>
       )}
     </ScrollView>

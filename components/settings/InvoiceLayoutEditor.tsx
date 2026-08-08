@@ -20,7 +20,7 @@ import type { PDFPageProxy } from "pdfjs-dist";
 import { X, Loader2, GripVertical, RotateCcw } from "lucide-react";
 import { loadPdfDocument } from "@/lib/pdfeditor/loadPdf";
 import {
-  DEFAULT_INVOICE_LAYOUT, type InvoiceLayout, type InvoiceLayoutColumn, type InvoiceTemplateDisplay,
+  DEFAULT_INVOICE_LAYOUT, DEFAULT_INVOICE_TYPOGRAPHY, type InvoiceLayout, type InvoiceLayoutColumn, type InvoiceTemplateDisplay,
   type InvoiceTypography, type InvoiceFontFamily,
 } from "@/lib/invoices/generateInvoicePdf";
 import type { InvoiceTemplateConfig } from "@/lib/invoices/types";
@@ -92,7 +92,22 @@ function isColumnVisible(key: InvoiceLayoutColumn['key'], display: InvoiceTempla
 export default function InvoiceLayoutEditor({ template, onClose, onSave }: Props) {
   const isDetailed = template.style === 'detailed';
   const visibleHandles = isDetailed ? HANDLES.filter(h => h.id === 'logo') : HANDLES;
-  const [layout, setLayout] = useState<InvoiceLayout>(template.layout ?? DEFAULT_INVOICE_LAYOUT);
+  // A shallow `?? DEFAULT_INVOICE_LAYOUT` here only helps when the whole
+  // layout is missing -- a template saved before `typography` existed (or
+  // before some later field within it was added) has a real, non-null
+  // `layout` object that's just missing that nested key, so the fallback
+  // never triggers and TYPOGRAPHY_KEYS.map below crashes reading
+  // `layout.typography[key]` off undefined. Confirmed live: Huynh Lawyers'
+  // "Standard" template (created before typography customization shipped)
+  // threw exactly this on open. Merge at both levels, matching
+  // generateInvoicePdf.ts's own `{ ...DEFAULT_INVOICE_LAYOUT, ...input.layout }`
+  // -- plus one level deeper for typography specifically, since it's the
+  // one nested object this editor assumes has every key present.
+  const [layout, setLayout] = useState<InvoiceLayout>({
+    ...DEFAULT_INVOICE_LAYOUT,
+    ...template.layout,
+    typography: { ...DEFAULT_INVOICE_TYPOGRAPHY, ...template.layout?.typography },
+  });
   const [pdfPage, setPdfPage] = useState<PDFPageProxy | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

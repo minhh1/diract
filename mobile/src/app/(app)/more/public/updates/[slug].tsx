@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, View, Pressable } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { ArrowDownAZ, ArrowUpAZ, LayoutGrid, Search, Send, Sparkles, Table2, X } from 'lucide-react-native';
+import { ArrowDownAZ, ArrowUpAZ, Eye, LayoutGrid, Lock, Search, Send, Sparkles, Table2, X } from 'lucide-react-native';
 
 import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -11,6 +11,7 @@ import {
   askAboutClientUpdateItem,
   useAddClientUpdateNote,
   useClientUpdateBoard,
+  usePublicClientUpdateBoard,
   type ClientUpdateBoard,
   type ClientUpdateField,
   type ClientUpdateItem,
@@ -76,7 +77,7 @@ function itemStatusValue(item: ClientUpdateItem, statusIds: string[]): string | 
 // API's raw insertion order with zero configuration needed, same as
 // MatterBoard.tsx's own "no default" fallback on web.
 function sortItems(items: ClientUpdateItem[], board: ClientUpdateBoard, groupId: string | null): ClientUpdateItem[] {
-  const defaults = groupId ? board.viewDefaults.find((v) => v.group_id === groupId) : undefined;
+  const defaults = groupId ? board.viewDefaults.find((v) => v.groupId === groupId) : undefined;
   const sortRule = defaults?.sort[0];
   return [...items].sort((a, b) => {
     if (sortRule) {
@@ -114,11 +115,18 @@ function ItemDetailModal({
   item,
   board,
   slug,
+  readOnly,
   onClose,
 }: {
   item: ClientUpdateItem | null;
   board: ClientUpdateBoard;
   slug: string;
+  // True in "preview as client" mode -- board.page.id is '' there (the
+  // public route never returns the page's real id, it's not needed for a
+  // read-only view), so notes/ask-AI stay hidden entirely rather than
+  // wiring write actions against an id that doesn't exist. Existing notes
+  // still show; this only hides the ADD affordances.
+  readOnly: boolean;
   onClose: () => void;
 }) {
   const theme = useTheme();
@@ -187,7 +195,7 @@ function ItemDetailModal({
               })}
             </View>
 
-            {board.page.ai_ask_enabled && (
+            {!readOnly && board.page.ai_ask_enabled && (
               <View style={{ gap: 8 }}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>ASK AI ABOUT THIS MATTER</Text>
                 <View style={[styles.askRow, { backgroundColor: theme.backgroundElement }]}>
@@ -217,19 +225,21 @@ function ItemDetailModal({
                   </Text>
                 </View>
               ))}
-              <View style={[styles.askRow, { backgroundColor: theme.backgroundElement }]}>
-                <TextInput
-                  value={note}
-                  onChangeText={setNote}
-                  onSubmitEditing={submitNote}
-                  placeholder="Add a note..."
-                  placeholderTextColor={theme.textSecondary}
-                  style={[styles.askInput, { color: theme.text }]}
-                />
-                <Pressable onPress={submitNote} disabled={addNote.isPending || !note.trim()}>
-                  <Send size={16} color={theme.accent} />
-                </Pressable>
-              </View>
+              {!readOnly && (
+                <View style={[styles.askRow, { backgroundColor: theme.backgroundElement }]}>
+                  <TextInput
+                    value={note}
+                    onChangeText={setNote}
+                    onSubmitEditing={submitNote}
+                    placeholder="Add a note..."
+                    placeholderTextColor={theme.textSecondary}
+                    style={[styles.askInput, { color: theme.text }]}
+                  />
+                  <Pressable onPress={submitNote} disabled={addNote.isPending || !note.trim()}>
+                    <Send size={16} color={theme.accent} />
+                  </Pressable>
+                </View>
+              )}
             </View>
           </ScrollView>
         </View>
@@ -241,12 +251,29 @@ function ItemDetailModal({
 export default function ClientUpdatePageScreen() {
   const theme = useTheme();
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const { data: board, isLoading } = useClientUpdateBoard(slug);
+  const { data: staffBoard, isLoading: staffLoading } = useClientUpdateBoard(slug);
   const [query, setQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<ClientUpdateItem | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'spreadsheet'>('cards');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+
+  // "Preview as client" -- toggles the data source to the genuinely
+  // anonymous public route (see usePublicClientUpdateBoard's own header
+  // comment) so staff can verify what an actual client would see
+  // (client_visible filtering, figure redaction) before sharing the link.
+  // Everything below this keeps reading a single `board` variable either
+  // way, so the existing grouping/sorting/rendering logic doesn't need to
+  // know which source it came from.
+  const [previewMode, setPreviewMode] = useState(false);
+  const [codeDraft, setCodeDraft] = useState('');
+  const [submittedCode, setSubmittedCode] = useState<string | null>(null);
+  const publicResult = usePublicClientUpdateBoard(slug, submittedCode, previewMode);
+  const publicBoard = publicResult.data && !publicResult.data.requiresCode ? publicResult.data.board : null;
+  const requiresCode = publicResult.data?.requiresCode ?? false;
+
+  const board = previewMode ? publicBoard : staffBoard;
+  const isLoading = previewMode ? publicResult.isLoading : staffLoading;
 
   const statusIds = useMemo(() => (board ? statusFieldIds(board) : []), [board]);
   const statusOptions = useMemo(() => {
@@ -291,10 +318,47 @@ export default function ClientUpdatePageScreen() {
     return sortDir === 'desc' ? sortItems(filteredItems, board, null).reverse() : sortItems(filteredItems, board, null);
   }, [board, filteredItems, sortDir]);
 
-  if (isLoading || !board) {
+  if (isLoading) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
         <ActivityIndicator />
+      </View>
+    );
+  }
+
+  const exitPreview = () => {
+    setPreviewMode(false);
+    setSubmittedCode(null);
+    setCodeDraft('');
+  };
+
+  if (previewMode && requiresCode) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background, gap: 12, paddingHorizontal: 32 }]}>
+        <Lock size={22} color={theme.textSecondary} />
+        <Text style={{ color: theme.text, fontSize: 14, fontWeight: '700' }}>This board needs an access code</Text>
+        <Text style={{ color: theme.textSecondary, fontSize: 12, textAlign: 'center' }}>Enter the code exactly as it was shared with the client.</Text>
+        <TextInput
+          value={codeDraft}
+          onChangeText={setCodeDraft}
+          autoCapitalize="none"
+          placeholder="Access code"
+          placeholderTextColor={theme.textSecondary}
+          style={[styles.codeInput, { borderColor: theme.border, backgroundColor: theme.backgroundElement, color: theme.text }]}
+        />
+        {publicResult.error && <Text style={{ color: theme.danger, fontSize: 12 }}>{publicResult.error instanceof Error ? publicResult.error.message : 'Incorrect code'}</Text>}
+        <Pressable onPress={() => setSubmittedCode(codeDraft.trim())} style={[styles.codeSubmitButton, { backgroundColor: theme.accent }]}>
+          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>View as client</Text>
+        </Pressable>
+        <Pressable onPress={exitPreview}><Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '700' }}>Cancel</Text></Pressable>
+      </View>
+    );
+  }
+
+  if (!board) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.background }]}>
+        <Text style={{ color: theme.textSecondary }}>Could not load this board.</Text>
       </View>
     );
   }
@@ -304,6 +368,12 @@ export default function ClientUpdatePageScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
+      {previewMode && (
+        <Pressable onPress={exitPreview} style={[styles.previewBanner, { backgroundColor: theme.accent }]}>
+          <Eye size={13} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800', flex: 1 }}>Viewing as client (read-only) · tap to exit</Text>
+        </Pressable>
+      )}
       <View style={[styles.searchRow, { backgroundColor: theme.backgroundElement }]}>
         <Search size={16} color={theme.textSecondary} />
         <TextInput
@@ -319,6 +389,11 @@ export default function ClientUpdatePageScreen() {
         <Pressable onPress={() => setViewMode((m) => (m === 'cards' ? 'spreadsheet' : 'cards'))} hitSlop={6}>
           {viewMode === 'cards' ? <Table2 size={18} color={theme.textSecondary} /> : <LayoutGrid size={18} color={theme.textSecondary} />}
         </Pressable>
+        {!previewMode && (
+          <Pressable onPress={() => setPreviewMode(true)} hitSlop={6}>
+            <Eye size={18} color={theme.textSecondary} />
+          </Pressable>
+        )}
       </View>
 
       {statusOptions.length > 0 && (
@@ -404,13 +479,16 @@ export default function ClientUpdatePageScreen() {
         </ScrollView>
       )}
 
-      <ItemDetailModal item={selectedItem} board={board} slug={slug} onClose={() => setSelectedItem(null)} />
+      <ItemDetailModal item={selectedItem} board={board} slug={slug} readOnly={previewMode} onClose={() => setSelectedItem(null)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  codeInput: { width: '100%', borderWidth: 1, borderRadius: Radii.pill, paddingHorizontal: 16, paddingVertical: 12, textAlign: 'center', fontSize: 15, fontWeight: '700' },
+  codeSubmitButton: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: Radii.pill },
+  previewBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 16, marginBottom: 0, paddingHorizontal: 16, paddingVertical: 12, borderRadius: Radii.pill },
   searchInput: { flex: 1, fontSize: 14, fontWeight: '500' },
   filterScroll: { flexGrow: 0, minHeight: 48 },

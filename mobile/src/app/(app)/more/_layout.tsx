@@ -16,6 +16,7 @@ export default function MoreStackLayout() {
       <Stack.Screen name="public/tasks/[pageId]" options={{ title: 'Task Page' }} />
       <Stack.Screen name="public/documents/[pageId]" options={{ title: 'Document Page' }} />
       <Stack.Screen name="public/updates/[slug]" options={{ title: 'Client Update' }} />
+      <Stack.Screen name="public/pages/[id]" options={{ title: 'Page' }} />
     </Stack>
   );
 }

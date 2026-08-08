@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TextInput, View, Pressable } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, View, Pressable } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -24,11 +24,11 @@ function RelationFieldRow({ field, value, onSave }: { field: RecordField; value:
   if (!field.relationTable || !field.relationDisplayColumn) {
     // A relation-typed field the app can't resolve a target table for --
     // shown read-only rather than silently letting an edit write an id
-    // nothing can display back.
+    // nothing can display back. Never prints the raw linked-record id.
     return (
       <View style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
-        <Text style={[styles.value, { color: theme.text }]}>{value == null ? '-' : String(value)}</Text>
+        <Text style={[styles.value, { color: theme.text }]}>{value == null ? '-' : '(unresolved link)'}</Text>
       </View>
     );
   }
@@ -38,7 +38,11 @@ function RelationFieldRow({ field, value, onSave }: { field: RecordField; value:
       <Pressable onPress={() => setPickerOpen(true)} style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
         <Text style={[styles.value, { color: theme.text }]} numberOfLines={2}>
-          {labelQuery.isLoading ? '…' : labelQuery.data ?? (value ? String(value) : '-')}
+          {/* Never falls through to the raw id -- a query that resolved but
+              found nothing (target record deleted) reads as "(removed)",
+              matching the "(Removed)" convention lib/hooks/useCustomTable.ts
+              uses on the web app for the same case. */}
+          {labelQuery.isLoading ? '…' : labelQuery.data ?? (value ? '(removed)' : '-')}
         </Text>
       </Pressable>
       <RelationPickerSheet
@@ -58,24 +62,53 @@ function RelationFieldRow({ field, value, onSave }: { field: RecordField; value:
 function DateFieldRow({ field, value, onSave }: { field: RecordField; value: unknown; onSave: (value: unknown) => Promise<void> }) {
   const theme = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
-  const dateValue = value ? new Date(value as string) : new Date();
+  // Draft only -- committed on "Save", not on every scroll of the wheel.
+  // Previously rendered the native picker directly inline in the field
+  // list on tap: besides looking inconsistent (the OS widget's own font is
+  // much larger than our row text), an empty field defaults the wheel to
+  // today, and there was no way to back out without it looking like today
+  // had been selected -- confusing, though nothing was actually saved
+  // until a real onChange fired.
+  const [draft, setDraft] = useState<Date>(value ? new Date(value as string) : new Date());
+
+  const openPicker = () => {
+    setDraft(value ? new Date(value as string) : new Date());
+    setPickerOpen(true);
+  };
 
   return (
     <>
-      <Pressable onPress={() => setPickerOpen(true)} style={[styles.row, { borderColor: theme.border }]}>
+      <Pressable onPress={openPicker} style={[styles.row, { borderColor: theme.border }]}>
         <Text style={[styles.label, { color: theme.textSecondary }]}>{field.label}</Text>
         <Text style={[styles.value, { color: theme.text }]}>{value ? new Date(value as string).toLocaleDateString('en-AU') : '-'}</Text>
       </Pressable>
-      {pickerOpen && (
-        <DateTimePicker
-          value={dateValue}
-          mode="date"
-          onChange={(_event, selected) => {
-            setPickerOpen(false);
-            if (selected) onSave(selected.toISOString().slice(0, 10));
-          }}
-        />
-      )}
+      <Modal visible={pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(false)}>
+        <View style={styles.pickerOverlay}>
+          <View style={[styles.pickerSheet, { backgroundColor: theme.backgroundElement }]}>
+            <Text style={[styles.pickerTitle, { color: theme.text }]}>{field.label}</Text>
+            <DateTimePicker
+              value={draft}
+              mode="date"
+              display="spinner"
+              onChange={(_event, selected) => selected && setDraft(selected)}
+            />
+            <View style={styles.pickerButtonRow}>
+              <Pressable style={styles.pickerButton} onPress={() => setPickerOpen(false)}>
+                <Text style={{ color: theme.textSecondary, fontWeight: '700' }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.pickerButton}
+                onPress={() => {
+                  setPickerOpen(false);
+                  onSave(draft.toISOString().slice(0, 10));
+                }}
+              >
+                <Text style={{ color: theme.accent, fontWeight: '700' }}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -239,4 +272,9 @@ const styles = StyleSheet.create({
   value: { fontSize: 14, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
   input: { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: 14, fontWeight: '600' },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radii.pill },
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  pickerSheet: { padding: 16, paddingBottom: 32, borderTopLeftRadius: 28, borderTopRightRadius: 28, gap: 8, alignItems: 'center' },
+  pickerTitle: { fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3, alignSelf: 'flex-start' },
+  pickerButtonRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', paddingTop: 8 },
+  pickerButton: { paddingVertical: 10, paddingHorizontal: 16 },
 });

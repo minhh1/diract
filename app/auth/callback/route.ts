@@ -1,9 +1,9 @@
 // app/auth/callback/route.ts
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { ensureStaffEntity } from '@/lib/services/staffEntityService'
 import { adminClient } from '@/lib/documentTemplateAuth'
 import { installTemplateForCompany } from '@/lib/templates/installTemplateForCompany'
+import { joinCompanyWithToken } from '@/lib/services/joinCompanyWithToken'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -95,52 +95,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Handle invite token -- add user to company
+    // Handle invite token -- add user to company. Uses the service-role
+    // admin client, not the user's own session client: team_members and
+    // registration_tokens both have admin-only RLS write policies, which a
+    // brand-new operator-role invitee can't satisfy yet themselves (see
+    // joinCompanyWithToken's header comment).
     if (inviteToken) {
-      const { data: tokenData } = await supabase
-        .from('registration_tokens')
-        .select('id, company_id, used_at, expires_at, default_team_id, role')
-        .eq('token', inviteToken)
-        .single()
-
-      if (
-        tokenData &&
-        !tokenData.used_at &&
-        (!tokenData.expires_at || new Date(tokenData.expires_at) > new Date())
-      ) {
-        const companyId = tokenData.company_id
-
-        if (companyId) {
-          // Add to company_memberships
-          await supabase.from('company_memberships').upsert({
-            company_id: companyId,
-            user_id: user.id,
-            role: tokenData.role || 'operator',
-          }, { onConflict: 'user_id,company_id' })
-
-          await ensureStaffEntity(supabase, companyId, user.id)
-
-          // Set active company
-          await supabase.from('profiles')
-            .update({ active_company_id: companyId })
-            .eq('id', user.id)
-
-          // Add to default team if specified
-          if (tokenData.default_team_id) {
-            await supabase.from('team_members').upsert({
-              team_id: tokenData.default_team_id,
-              profile_id: user.id,
-            }, { onConflict: 'team_id,profile_id' })
-          }
-
-          // Mark token as used
-          await supabase.from('registration_tokens')
-            .update({ used_at: new Date().toISOString(), used_by: user.id })
-            .eq('token', inviteToken)
-
-          // Clear the invite cookie
-          response.cookies.set('invite_token', '', { maxAge: 0, path: '/' })
-        }
+      const result = await joinCompanyWithToken(adminClient(), user.id, inviteToken)
+      if (result.ok) {
+        response.cookies.set('invite_token', '', { maxAge: 0, path: '/' })
+      } else {
+        console.error('[auth/callback] invite join failed:', result.error)
       }
     }
 

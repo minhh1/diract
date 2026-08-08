@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,6 +19,18 @@ function isPlainTextField(field: RecordField): boolean {
   if (field.fieldType === 'boolean' || field.fieldType === 'date') return false;
   if (field.fieldType === 'select' && field.selectOptions?.length) return false;
   return true;
+}
+
+// Mirrors CustomTableQuickAddForm.tsx's getDefaultValues -- date fields
+// default to today so same-day entries don't require picking a date every time.
+function getDefaultValues(fields: RecordField[]): Record<string, unknown> {
+  const defaults: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (field.fieldType === 'date') {
+      defaults[field.key] = new Date().toISOString().slice(0, 10);
+    }
+  }
+  return defaults;
 }
 
 function RelationInput({ field, value, onChange }: { field: RecordField; value: unknown; onChange: (v: unknown) => void }) {
@@ -152,22 +164,34 @@ export function QuickAddFormWidget({
   allFields,
   fieldIds,
   onAdded,
+  prefill,
+  onPrefillApplied,
 }: {
   tableName: SystemTableName;
   companyId: string;
   allFields: RecordField[];
   fieldIds: string[];
   onAdded: () => void;
+  // Set by MyTasksButtonWidget's "Convert" -- see CustomTableQuickAddForm.tsx's
+  // matching prop for the full explanation.
+  prefill?: Record<string, unknown> | null;
+  onPrefillApplied?: () => void;
 }) {
   const theme = useTheme();
   const queryClient = useQueryClient();
-  const [values, setValues] = useState<Record<string, unknown>>({});
+  const fieldById = new Map(allFields.map((f) => [f.key, f]));
+  const fields = fieldIds.map((id) => fieldById.get(id)).filter((f): f is RecordField => !!f);
+  const [values, setValues] = useState<Record<string, unknown>>(() => getDefaultValues(fields));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textInputRefs = useRef<Record<string, TextInput | null>>({});
 
-  const fieldById = new Map(allFields.map((f) => [f.key, f]));
-  const fields = fieldIds.map((id) => fieldById.get(id)).filter((f): f is RecordField => !!f);
+  useEffect(() => {
+    if (!prefill) return;
+    setValues((prev) => ({ ...prev, ...prefill }));
+    onPrefillApplied?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   const submit = async () => {
     setSaving(true);
@@ -178,7 +202,7 @@ export function QuickAddFormWidget({
       setError(result.error);
       return;
     }
-    setValues({});
+    setValues(getDefaultValues(fields));
     queryClient.invalidateQueries({ queryKey: ['records', tableName] });
     onAdded();
   };

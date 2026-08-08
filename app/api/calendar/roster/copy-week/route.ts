@@ -28,8 +28,8 @@ function dayDiffUTC(a: string, b: string): number {
 export async function POST(req: NextRequest) {
   const auth = await authorizeCompanyMember();
   if (auth.error) return auth.error;
-  const { admin, companyId, user, isAdmin } = auth;
-  if (!isAdmin) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  const { admin, companyId, user, isAdmin, hasPermission } = auth;
+  if (!isAdmin && !hasPermission("roster.edit")) return NextResponse.json({ error: "Admin access required" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const fromWeekStart: string | undefined = body?.fromWeekStart;

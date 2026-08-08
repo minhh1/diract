@@ -32,6 +32,10 @@ interface CompanyContextValue {
   userEmail: string | null;
   isAdmin: boolean;
   isSiteAdmin: boolean;
+  // company_memberships role for the active company (e.g. 'company_admin',
+  // 'manager', 'operator', 'kiosk'). app/(app)/dashboard/layout.tsx reads
+  // this to switch a kiosk login into its restricted shell.
+  role: string | null;
   myTeamIds: string[];
   ledTeamIds: string[];
   loading: boolean;
@@ -53,6 +57,7 @@ const CompanyContext = createContext<CompanyContextValue>({
   userEmail: null,
   isAdmin: false,
   isSiteAdmin: false,
+  role: null,
   myTeamIds: [],
   ledTeamIds: [],
   loading: true,
@@ -82,6 +87,7 @@ interface CachedCompanyState {
   userEmail: string | null;
   isAdmin: boolean;
   isSiteAdmin: boolean;
+  role: string | null;
   myTeamIds: string[];
   ledTeamIds: string[];
   tableLabelOverrides: TableLabelOverrides;
@@ -114,6 +120,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSiteAdmin, setIsSiteAdmin] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
   const [myTeamIds, setMyTeamIds] = useState<string[]>([]);
   const [ledTeamIds, setLedTeamIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -136,6 +143,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     setUserEmail(cachedBoot.userEmail);
     setIsAdmin(cachedBoot.isAdmin);
     setIsSiteAdmin(cachedBoot.isSiteAdmin);
+    setRole(cachedBoot.role);
     setMyTeamIds(cachedBoot.myTeamIds);
     setLedTeamIds(cachedBoot.ledTeamIds);
     setTableLabelOverrides(cachedBoot.tableLabelOverrides);
@@ -161,7 +169,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         // shared browser) -- don't leave a stale cached identity showing.
         clearShellCache(COMPANY_CACHE_KEY);
         setCompanyId(null); setCompanyName(null); setCompanyType(null);
-        setUserId(null); setUserEmail(null); setIsAdmin(false); setIsSiteAdmin(false);
+        setUserId(null); setUserEmail(null); setIsAdmin(false); setIsSiteAdmin(false); setRole(null);
         setMyTeamIds([]); setLedTeamIds([]);
         setTableLabelOverrides({}); setDisabledSystemTables({});
         setInvoiceSettings(emptyInvoiceSettings()); setLogoUrl(null);
@@ -180,13 +188,14 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       setLogoUrl(result.logoUrl);
       setIsAdmin(result.isAdmin);
       setIsSiteAdmin(result.isSiteAdmin);
+      setRole(result.role);
       setMyTeamIds(result.myTeamIds);
       setLedTeamIds(result.ledTeamIds);
       setLoading(false);
       writeShellCache<CachedCompanyState>(COMPANY_CACHE_KEY, {
         companyId: result.companyId, companyName: result.companyName, companyType: result.companyType,
         userId: result.userId, userEmail: result.userEmail,
-        isAdmin: result.isAdmin, isSiteAdmin: result.isSiteAdmin,
+        isAdmin: result.isAdmin, isSiteAdmin: result.isSiteAdmin, role: result.role,
         myTeamIds: result.myTeamIds, ledTeamIds: result.ledTeamIds,
         tableLabelOverrides: result.tableLabelOverrides, disabledSystemTables: result.disabledSystemTables,
         invoiceSettings: result.invoiceSettings, logoUrl: result.logoUrl,
@@ -233,7 +242,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   return (
     <CompanyContext.Provider value={{
-      companyId, companyName, companyType, userId, userEmail, isAdmin, isSiteAdmin, myTeamIds, ledTeamIds, loading,
+      companyId, companyName, companyType, userId, userEmail, isAdmin, isSiteAdmin, role, myTeamIds, ledTeamIds, loading,
       tableLabelOverrides, refreshTableLabelOverrides, disabledSystemTables, refreshDisabledSystemTables,
       invoiceSettings, refreshInvoiceSettings, logoUrl, refreshLogoUrl,
     }}>

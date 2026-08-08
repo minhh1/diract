@@ -159,11 +159,11 @@ export default function DocumentFillPageScreen() {
       )}
 
       <View style={[styles.fieldsCard, { backgroundColor: theme.backgroundElement }]}>
-        {visibleFields.map((field, i) => {
+        {visibleFields.map((field) => {
           const isNa = naFields.has(field.tagKey);
           const isCurrency = field.fieldType === 'currency';
           return (
-            <View key={field.tagKey} style={[styles.fieldBlock, i > 0 && { borderTopWidth: 1, borderTopColor: theme.border }]}>
+            <View key={field.tagKey} style={styles.fieldBlock}>
               <View style={styles.fieldLabelRow}>
                 <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>
                   {field.label}

@@ -189,6 +189,12 @@ export interface GenerateInvoicePdfInput {
     // a manually-typed explanation of the work, since there's no itemised
     // table left on the invoice for the client to infer it from otherwise.
     professionalFeesDescription?: string | null;
+    // Flexible-template only (see this file's own "Additional details"
+    // section below) -- free-text extra context a firm wants on the
+    // invoice beyond the fee/disbursement breakdown itself (e.g. a project
+    // summary, a special payment arrangement). Never required, unlike
+    // professionalFeesDescription this isn't a substitute for anything else.
+    additionalDetails?: string | null;
   };
   feeLines: InvoiceFeeLine[];
   disbursementLines: InvoiceDisbursementLine[];
@@ -282,6 +288,16 @@ export const INVOICE_LAYOUT_PRESETS: { id: string; name: string; layout: Invoice
   { id: 'formal', name: 'Formal', layout: FORMAL_INVOICE_LAYOUT },
 ];
 
+// Visual polish constants for the flexible/Standard renderer -- a fixed,
+// tasteful accent (matches this app's own indigo-600 UI brand color) rather
+// than a new per-template configurable color, to keep this an baseline
+// upgrade rather than another settings surface. Detailed/law-firm style
+// deliberately keeps its plain black-on-white look (generateDetailedInvoicePdf.ts,
+// untouched) -- that one follows a fixed statutory-style layout on purpose.
+const ACCENT: [number, number, number] = [0.31, 0.275, 0.897];
+const ACCENT_TINT: [number, number, number] = [0.95, 0.95, 0.99];
+const HEADER_GRAY: [number, number, number] = [0.55, 0.55, 0.6];
+
 const FONT_STANDARDS: Record<InvoiceFontFamily, { regular: StandardFonts; bold: StandardFonts }> = {
   helvetica: { regular: StandardFonts.Helvetica, bold: StandardFonts.HelveticaBold },
   times: { regular: StandardFonts.TimesRoman, bold: StandardFonts.TimesRomanBold },
@@ -341,7 +357,14 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
     ? await (input.company.logoIsPng ? pdfDoc.embedPng(input.company.logoBytes) : pdfDoc.embedJpg(input.company.logoBytes))
     : null;
 
+  // Thin accent band across the very top of every page -- the one purely
+  // decorative touch, drawn first so everything else layers on top of it.
+  function drawAccentBar(p: PDFPage) {
+    p.drawRectangle({ x: 0, y: PAGE_H - 5, width: PAGE_W, height: 5, color: rgb(...ACCENT) });
+  }
+
   let page: PDFPage = pdfDoc.addPage([PAGE_W, PAGE_H]);
+  drawAccentBar(page);
   // Flowing cursor -- only used from the fee table onward. The header
   // section (letterhead/title/bill-to) draws at its own independent
   // `layout` anchors instead (see `text`'s optional `atY`), since those are
@@ -350,6 +373,7 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
 
   function newPage() {
     page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    drawAccentBar(page);
     y = PAGE_H - margin;
   }
 
@@ -371,6 +395,45 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
 
   function hr(atY: number, color: [number, number, number] = [0.85, 0.85, 0.87]) {
     page.drawLine({ start: { x: margin, y: atY }, end: { x: PAGE_W - margin, y: atY }, thickness: 0.75, color: rgb(...color) });
+  }
+
+  // "PROFESSIONAL FEES" / "DISBURSEMENTS" -- same bold gray label as
+  // before, plus a short accent underline beneath just the label's own
+  // width (not a full-width rule -- this is a section marker, not a
+  // divider). Advances y past both the text and the underline's gap.
+  function sectionHeading(label: string) {
+    text(label, margin, typo.sectionHeading, { bold: true, color: [0.3, 0.3, 0.34] });
+    const w = fontFor(typo.sectionHeading, true).widthOfTextAtSize(label, typo.sectionHeading.size);
+    page.drawLine({ start: { x: margin, y: y - 4 }, end: { x: margin + w, y: y - 4 }, thickness: 1.5, color: rgb(...ACCENT) });
+    y -= 18;
+  }
+
+  // Column labels above a fee/disbursement table -- this renderer never had
+  // any before, which made a table of bare numbers harder to scan than it
+  // needed to be. Mirrors drawLineItemTable/drawDisbursementTable's own x
+  // calculations exactly so labels land directly above their column.
+  function columnHeaders(columns: InvoiceLayoutColumn[], showStaffCol: boolean) {
+    const cols = rightColumnLayout(input.display, columns, margin);
+    const font = fontFor(typo.tableRow, false);
+    const size = typo.tableRow.size;
+    const gray = rgb(...HEADER_GRAY);
+    let x = margin;
+    page.drawText('Date', { x, y, size, font, color: gray });
+    x += 62;
+    if (showStaffCol && input.display.showStaffInitials) {
+      page.drawText('By', { x, y, size, font, color: gray });
+      x += 34;
+    }
+    page.drawText('Description', { x, y, size, font, color: gray });
+    const labelForKey: Record<InvoiceLayoutColumn['key'], string> = { rate: 'Rate', hours: 'Hours', gst: 'GST', amount: 'Amount' };
+    for (const col of columns) {
+      const colX = cols.xByKey[col.key];
+      if (colX == null) continue;
+      const label = labelForKey[col.key];
+      page.drawText(label, { x: colX - font.widthOfTextAtSize(label, size), y, size, font, color: gray });
+    }
+    page.drawLine({ start: { x: margin, y: y - 4 }, end: { x: PAGE_W - margin, y: y - 4 }, thickness: 0.75, color: rgb(...ACCENT) });
+    y -= 16;
   }
 
   // ── Letterhead ─────────────────────────────────────────────────────
@@ -435,9 +498,9 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
 
   // ── Fee lines ─────────────────────────────────────────────────────
   if (input.feeLines.length) {
-    text('PROFESSIONAL FEES', margin, typo.sectionHeading, { bold: true, color: [0.3, 0.3, 0.34] });
-    y -= 18;
-    ensureRoom(60);
+    sectionHeading('PROFESSIONAL FEES');
+    ensureRoom(76);
+    columnHeaders(layout.feeColumns, true);
     ({ page, y } = drawLineItemTable(pdfDoc, page, y, input, fonts, typo.tableRow, layout, margin, MIN_Y));
     if (input.display.showFeeSubtotal) {
       const feesTotal = input.feeLines.reduce((s, l) => s + l.billedAmount, 0);
@@ -459,9 +522,9 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
 
   // ── Disbursements ─────────────────────────────────────────────────
   if (input.disbursementLines.length) {
-    ensureRoom(60);
-    text('DISBURSEMENTS', margin, typo.sectionHeading, { bold: true, color: [0.3, 0.3, 0.34] });
-    y -= 18;
+    ensureRoom(76);
+    sectionHeading('DISBURSEMENTS');
+    columnHeaders(layout.disbColumns, false);
     ({ page, y } = drawDisbursementTable(pdfDoc, page, y, input, fonts, typo.tableRow, layout, margin, MIN_Y));
     if (input.display.showDisbursementSubtotal) {
       const disbTotal = input.disbursementLines.reduce((s, l) => s + l.amount, 0);
@@ -478,9 +541,18 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
   hr(y);
   y -= 20;
   const totalsX = PAGE_W - margin - 160;
-  function totalRow(label: string, value: number, opts: { bold?: boolean } = {}) {
-    text(label, totalsX, typo.totals, opts);
-    text(money(value), PAGE_W - margin, typo.totals, { align: 'right', ...opts });
+  // `emphasize` is only ever the final "Amount due" row -- a light accent-
+  // tinted band behind just that one line, so the number a client actually
+  // needs to act on stands out from the plain running list above it.
+  function totalRow(label: string, value: number, opts: { bold?: boolean; emphasize?: boolean } = {}) {
+    if (opts.emphasize) {
+      page.drawRectangle({
+        x: totalsX - 12, y: y - 5, width: (PAGE_W - margin + 12) - (totalsX - 12), height: typo.totals.size + 10,
+        color: rgb(...ACCENT_TINT),
+      });
+    }
+    text(label, totalsX, typo.totals, { ...opts, color: opts.emphasize ? ACCENT : undefined });
+    text(money(value), PAGE_W - margin, typo.totals, { align: 'right', ...opts, color: opts.emphasize ? ACCENT : undefined });
     y -= 16;
   }
   if (input.display.showPriorBalance && input.invoice.priorBalance) totalRow('Opening balance', input.invoice.priorBalance);
@@ -493,16 +565,31 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
     // line -- only need one here when that block is switched off for this
     // template, since a discount changes what's actually owed and the
     // client needs to see that somewhere.
-    if (!input.display.showPaymentSummary) totalRow('Amount due', input.invoice.amountDue, { bold: true });
+    if (!input.display.showPaymentSummary) totalRow('Amount due', input.invoice.amountDue, { bold: true, emphasize: true });
   }
   if (input.display.showPaymentSummary) {
     y -= 4;
     if (input.invoice.trustApplied) totalRow('Trust funds applied', -input.invoice.trustApplied);
     if (input.invoice.payments) totalRow('Payments received', -input.invoice.payments);
     if (input.invoice.waivedAmount) totalRow('Amount waived', -input.invoice.waivedAmount);
-    totalRow('Amount due', input.invoice.amountDue, { bold: true });
+    totalRow('Amount due', input.invoice.amountDue, { bold: true, emphasize: true });
   }
   y -= 20;
+
+  // ── Additional details ───────────────────────────────────────────
+  // Free-text extra context a firm wants on the invoice beyond the fee/
+  // disbursement breakdown itself -- optional, so this section simply
+  // doesn't exist when it's empty rather than showing a blank heading.
+  if (input.invoice.additionalDetails) {
+    ensureRoom(50);
+    sectionHeading('ADDITIONAL DETAILS');
+    for (const line of wrapText(input.invoice.additionalDetails, fontFor(typo.footer, false), typo.footer.size, CONTENT_W)) {
+      ensureRoom(14);
+      text(line, margin, typo.footer, { color: [0.3, 0.3, 0.34] });
+      y -= 13;
+    }
+    y -= 10;
+  }
 
   // ── Terms / footer ────────────────────────────────────────────────
   ensureRoom(120);

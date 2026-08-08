@@ -31,5 +31,10 @@ export function useThemedStackScreenOptions() {
     headerTintColor: theme.text,
     headerTitleStyle: { color: theme.text },
     headerShadowVisible: false,
+    // Default back button label is the previous screen's title (e.g.
+    // "‹ Dashboards"), which reads as noisy clutter next to this screen's
+    // own title -- the arrow alone is enough, the user already knows what
+    // screen they came from.
+    headerBackButtonDisplayMode: 'minimal',
   } as const;
 }

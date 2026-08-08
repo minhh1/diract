@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { supabase } from './supabase';
+import { fetchMatterNumbersByProjectId, withMatterNumber } from './matterNumberDisplay';
 
 // Lazily resolves a single relation field's display label (e.g. a
 // project_id -> that project's name) for the detail view -- a light,
@@ -21,7 +22,20 @@ export function useRelationLabel(table: string | null, column: string | null, id
         .eq('id', id as string)
         .maybeSingle();
       const value = (data as Record<string, unknown> | null)?.[column as string];
-      return value == null ? null : String(value);
+      if (value == null) return null;
+      // A linked Matter also gets its per-company matter number prepended --
+      // see matterNumberDisplay.ts's header comment. A failure here should
+      // never hide an otherwise-resolved name (e.g. a transient network
+      // error) -- worst case this just falls back to the name alone.
+      if (table === 'projects') {
+        try {
+          const numberById = await fetchMatterNumbersByProjectId([id as string]);
+          return withMatterNumber(String(value), numberById.get(id as string));
+        } catch (err) {
+          console.error('[relationLabels] fetchMatterNumbersByProjectId failed:', err);
+        }
+      }
+      return String(value);
     },
   });
 }

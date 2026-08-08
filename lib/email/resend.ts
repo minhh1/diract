@@ -62,3 +62,21 @@ export async function deleteDomain(id: string): Promise<void> {
 export async function sendEmail(params: { from: string; to: string; subject: string; html: string }): Promise<{ id: string }> {
   return resendFetch("/emails", { method: "POST", body: JSON.stringify(params) });
 }
+
+// Resend's batch endpoint caps a single request at 100 emails -- used by
+// campaign sends (app/api/email-campaigns/[id]/send/route.ts), where a real
+// recipient list can run into the hundreds and sequential sendEmail() calls
+// would mean hundreds of round trips. Each entry succeeds/fails
+// independently; a failure partway through a chunk doesn't roll back the
+// emails already sent in that or earlier chunks.
+export async function sendBatchEmails(
+  emails: { from: string; to: string; subject: string; html: string }[]
+): Promise<{ id: string }[]> {
+  const results: { id: string }[] = [];
+  for (let i = 0; i < emails.length; i += 100) {
+    const chunk = emails.slice(i, i + 100);
+    const json = await resendFetch("/emails/batch", { method: "POST", body: JSON.stringify(chunk) });
+    results.push(...(json?.data ?? []));
+  }
+  return results;
+}

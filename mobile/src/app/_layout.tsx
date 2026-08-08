@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { queryClient } from '@/lib/queryClient';
 import { SessionProvider, useSession } from '@/lib/session';
 import { ThemeModeProvider, useThemeMode } from '@/lib/themeMode';
+import { useOrientationLock } from '@/hooks/use-orientation-lock';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -43,6 +44,8 @@ function ThemedStatusBar() {
 }
 
 export default function RootLayout() {
+  useOrientationLock();
+
   return (
     // Required by react-native-gesture-handler's Swipeable (used for the
     // Task Page's swipe-to-complete/delete row actions) -- without this,

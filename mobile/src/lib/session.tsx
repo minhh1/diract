@@ -14,6 +14,11 @@ export type Profile = {
 type SessionContextValue = {
   session: Session | null;
   profile: Profile | null;
+  // company_memberships role for the active company (e.g. 'company_admin',
+  // 'operator', 'kiosk') -- distinct from profile.is_admin, which is a
+  // legacy/global flag. Mirrors lib/companyBootstrap.ts's activeRole on web.
+  // Null while loading or when signed out.
+  role: string | null;
   loading: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -24,6 +29,7 @@ const SessionContext = createContext<SessionContextValue | undefined>(undefined)
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async (userId: string) => {
@@ -33,6 +39,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .eq('id', userId)
       .maybeSingle();
     setProfile(data ?? null);
+
+    if (data?.active_company_id) {
+      const { data: membership } = await supabase
+        .from('company_memberships')
+        .select('role')
+        .eq('user_id', userId)
+        .eq('company_id', data.active_company_id)
+        .maybeSingle();
+      setRole(membership?.role ?? null);
+    } else {
+      setRole(null);
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -52,6 +70,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await loadProfile(next.user.id);
       } else {
         setProfile(null);
+        setRole(null);
       }
     });
 
@@ -63,7 +82,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <SessionContext.Provider value={{ session, profile, loading, refreshProfile, signOut }}>
+    <SessionContext.Provider value={{ session, profile, role, loading, refreshProfile, signOut }}>
       {children}
     </SessionContext.Provider>
   );

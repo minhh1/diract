@@ -26,15 +26,55 @@ import { ensureStaffEntity } from '@/lib/staffEntityService';
 import { supabase } from '@/lib/supabase';
 import { Radii } from '@/constants/theme';
 import { useGradients, useTheme } from '@/hooks/use-theme';
+import { useIsLandscapeTablet } from '@/hooks/use-tablet-layout';
 import { GradientButton } from '@/components/ui/GradientButton';
 import { GradientText } from '@/components/ui/GradientText';
 import { HeroBackground } from '@/components/ui/HeroBackground';
 
 type AuthMode = 'login' | 'register';
 
+// Mirrors app/(marketing)/login/page.tsx's VALUE_PROPS exactly.
+const VALUE_PROPS = [
+  'Build the tables and workflow your business runs on',
+  'Send invoices, texts, and emails straight from your workflow',
+  'Manage multiple companies under one login',
+];
+
+// The left half of the iPad-landscape split (see SignInScreen) -- mirrors
+// the web login page's "Canva-style split login" brand panel (same
+// gradient direction, same value props), shown only in landscape on iPad
+// since portrait/phone don't have the width to spare. Phone/portrait keep
+// the single centered card unchanged; this is purely additive.
+function BrandPanel() {
+  const gradients = useGradients();
+  return (
+    <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.brandPanel}>
+      <View style={styles.brandPanelTop}>
+        <View style={styles.brandPanelIcon}>
+          <Fingerprint color={gradients.primary[1]} size={22} />
+        </View>
+        <Text style={styles.brandPanelName}>Diract</Text>
+      </View>
+      <View>
+        <Text style={styles.brandPanelHeading}>Your process,{'\n'}your CRM.</Text>
+        <View style={{ gap: 14 }}>
+          {VALUE_PROPS.map((v) => (
+            <View key={v} style={styles.brandPanelPropRow}>
+              <CheckCircle2 color="#fff" size={18} />
+              <Text style={styles.brandPanelPropText}>{v}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+      <Text style={styles.brandPanelFooter}>DIRACT · CONFIGURABLE CRM</Text>
+    </LinearGradient>
+  );
+}
+
 export default function SignInScreen() {
   const theme = useTheme();
   const gradients = useGradients();
+  const isLandscapeTablet = useIsLandscapeTablet();
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -103,8 +143,7 @@ export default function SignInScreen() {
     // that reacts to a fresh session + pending invite, mirrored below for
     // the password path too.
     if (!oauthError && inviteData) {
-      const { data } = await supabase.auth.getUser();
-      if (data.user) await joinCompanyWithToken(data.user.id, inviteData);
+      await joinCompanyWithToken(inviteData);
     }
     setGoogleLoading(false);
   };
@@ -130,7 +169,7 @@ export default function SignInScreen() {
       return;
     }
     if (data.session && inviteData?.company_id) {
-      await joinCompanyWithToken(data.user.id, inviteData);
+      await joinCompanyWithToken(inviteData);
     }
     setLoading(false);
   };
@@ -185,7 +224,7 @@ export default function SignInScreen() {
           },
           { onConflict: 'id' },
         );
-        await joinCompanyWithToken(userId, inviteData);
+        await joinCompanyWithToken(inviteData);
       } else {
         // register_company_and_profile never accepted a p_invite_token
         // param -- passing one makes PostgREST unable to match any
@@ -236,28 +275,50 @@ export default function SignInScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View style={{ flex: 1, flexDirection: isLandscapeTablet ? 'row' : 'column' }}>
+      {isLandscapeTablet && <BrandPanel />}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <HeroBackground>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-          <View style={styles.brandRow}>
-            <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.brandIcon}>
-              <Fingerprint color="#fff" size={26} />
-            </LinearGradient>
-            <GradientText style={styles.brandTitle}>Diract</GradientText>
-            <Text style={[styles.brandSubtitle, { color: theme.textSecondary }]}>
-              {mode === 'register'
-                ? isJoinInvite
-                  ? `Join ${inviteData?.company_name ?? 'Company'}`
-                  : 'New Company Enrolment'
-                : isJoinInvite
-                ? `Sign in to join ${inviteData?.company_name ?? 'Company'}`
-                : 'Enterprise Secure Access'}
-            </Text>
-          </View>
+        <View style={[styles.card, { backgroundColor: theme.backgroundElement }, isLandscapeTablet && styles.cardLandscape]}>
+          {isLandscapeTablet ? (
+            // Branding lives in BrandPanel to the left instead -- just the
+            // mode heading here, mirroring the web login page's `hidden
+            // lg:block` title block.
+            <View style={styles.formHeading}>
+              <Text style={[styles.formHeadingTitle, { color: theme.text }]}>
+                {mode === 'register' ? 'Create your account' : 'Welcome back'}
+              </Text>
+              <Text style={[styles.formHeadingSubtitle, { color: theme.textSecondary }]}>
+                {mode === 'register'
+                  ? isJoinInvite
+                    ? `Join ${inviteData?.company_name ?? 'Company'}`
+                    : 'Set up your firm’s workspace'
+                  : isJoinInvite
+                  ? `Sign in to join ${inviteData?.company_name ?? 'Company'}`
+                  : 'Sign in to your workspace'}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.brandRow}>
+              <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.brandIcon}>
+                <Fingerprint color="#fff" size={26} />
+              </LinearGradient>
+              <GradientText style={styles.brandTitle}>Diract</GradientText>
+              <Text style={[styles.brandSubtitle, { color: theme.textSecondary }]}>
+                {mode === 'register'
+                  ? isJoinInvite
+                    ? `Join ${inviteData?.company_name ?? 'Company'}`
+                    : 'New Company Enrolment'
+                  : isJoinInvite
+                  ? `Sign in to join ${inviteData?.company_name ?? 'Company'}`
+                  : 'Enterprise Secure Access'}
+              </Text>
+            </View>
+          )}
 
           {inviteTokenInput.trim().length > 0 && (
             <View
@@ -475,14 +536,34 @@ export default function SignInScreen() {
         </View>
       </ScrollView>
       </HeroBackground>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 20 },
   card: { borderRadius: Radii.card, padding: 24, gap: 12 },
+  cardLandscape: { width: '100%', maxWidth: 420, alignSelf: 'center' },
   brandRow: { alignItems: 'center', marginBottom: 8 },
+  formHeading: { marginBottom: 8 },
+  formHeadingTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
+  formHeadingSubtitle: { fontSize: 13, marginTop: 6 },
+  brandPanel: { flex: 1, justifyContent: 'space-between', padding: 40 },
+  brandPanelTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  brandPanelIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandPanelName: { color: '#fff', fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
+  brandPanelHeading: { color: '#fff', fontSize: 28, fontWeight: '300', letterSpacing: -0.5, lineHeight: 34, marginBottom: 28 },
+  brandPanelPropRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  brandPanelPropText: { flex: 1, color: 'rgba(255,255,255,0.9)', fontSize: 14 },
+  brandPanelFooter: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '600', letterSpacing: 3, textTransform: 'uppercase' },
   brandIcon: {
     width: 56,
     height: 56,

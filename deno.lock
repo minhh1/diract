@@ -1,0 +1,58 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.112.1"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.112.1": "497e1884f2e760ee816b6081f8e9497f453d35d0b5fb10c0bb898b0debeee58d"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@anthropic-ai/sdk@0.115",
+        "npm:@aws-sdk/client-cost-explorer@^3.1093.0",
+        "npm:@aws-sdk/client-ec2@^3.1090.0",
+        "npm:@aws-sdk/client-iam@^3.1090.0",
+        "npm:@aws-sdk/client-ssm@^3.1090.0",
+        "npm:@aws-sdk/client-sts@^3.1093.0",
+        "npm:@pdf-lib/fontkit@^1.1.1",
+        "npm:@supabase/ssr@0.12",
+        "npm:@supabase/supabase-js@^2.108.2",
+        "npm:@tailwindcss/postcss@4",
+        "npm:@tanstack/query-sync-storage-persister@^5.101.2",
+        "npm:@tanstack/react-query-persist-client@^5.101.2",
+        "npm:@tanstack/react-query@^5.101.2",
+        "npm:@types/leaflet@^1.9.22",
+        "npm:@types/node@20",
+        "npm:@types/react-dom@19",
+        "npm:@types/react@19",
+        "npm:@types/ws@^8.18.1",
+        "npm:docx@^9.7.1",
+        "npm:docxtemplater@^3.69.0",
+        "npm:eslint-config-next@16.2.9",
+        "npm:eslint@9",
+        "npm:framer-motion@^12.43.0",
+        "npm:isomorphic-dompurify@^3.18.0",
+        "npm:jose@^6.2.3",
+        "npm:jszip@^3.10.1",
+        "npm:leaflet@^1.9.4",
+        "npm:lucide-react@^1.18.0",
+        "npm:marked@^18.0.6",
+        "npm:next-themes@~0.4.6",
+        "npm:next@16.2.9",
+        "npm:pdf-lib@^1.17.1",
+        "npm:pdfjs-dist@^6.1.200",
+        "npm:pizzip@^3.2.0",
+        "npm:playwright@^1.61.1",
+        "npm:react-dom@19.2.4",
+        "npm:react-grid-layout@^2.2.3",
+        "npm:react-leaflet@5",
+        "npm:react@19.2.4",
+        "npm:stripe@^22.3.2",
+        "npm:tailwindcss@4",
+        "npm:typescript@5",
+        "npm:ws@^8.21.1"
+      ]
+    }
+  }
+}
