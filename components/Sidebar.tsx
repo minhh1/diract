@@ -701,6 +701,12 @@ export default function Sidebar() {
   const [switchingCompany, setSwitchingCompany] = useState(false);
   const [showCreateCompany, setShowCreateCompany] = useState(false);
   const [showChooseKiosk, setShowChooseKiosk] = useState(false);
+  // Gates whether "Enter kiosk mode" even shows in the account menu --
+  // there's nothing useful to enter as until an admin has created at least
+  // one named kiosk in Admin > Kiosk Accounts (kiosks are never
+  // auto-named, see lib/kioskDevice.ts), so a company with none yet
+  // shouldn't see a dead-end menu item.
+  const [hasKioskAccounts, setHasKioskAccounts] = useState(false);
   // next-themes' `theme` reads as undefined until after mount (it doesn't
   // know the persisted/system preference during SSR) -- `mounted` gates the
   // active-option highlight below so the very first client render matches
@@ -821,6 +827,15 @@ export default function Sidebar() {
   // Mobile drawer closes itself on navigation -- otherwise it'd stay open
   // over the newly-loaded page until the user manually dismissed it.
   useEffect(() => { setMobileMenuOpen(false); }, [pathname]);
+
+  // Whether "Enter kiosk mode" has anything to enter as -- see
+  // hasKioskAccounts' own declaration comment.
+  useEffect(() => {
+    if (!ctxIsAdmin || !ctxCompanyId) { setHasKioskAccounts(false); return; }
+    fetch("/api/admin/kiosk-accounts").then(res => res.json()).then(data => {
+      setHasKioskAccounts(!!data?.accounts?.length);
+    }).catch(() => {});
+  }, [ctxIsAdmin, ctxCompanyId]);
 
   // ── Load tree config from DB when the tree's table changes ──────
   useEffect(() => {
@@ -1372,7 +1387,7 @@ export default function Sidebar() {
                 </div>
               </Link>
 
-              {ctxIsAdmin && (
+              {ctxIsAdmin && hasKioskAccounts && (
                 <button
                   onClick={handleEnterKioskMode}
                   className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 transition-colors border-b border-slate-100"
