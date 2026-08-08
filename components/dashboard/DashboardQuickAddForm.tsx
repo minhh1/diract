@@ -82,12 +82,13 @@ function computeAllPreviews(fields: CustomTableField[], values: Record<string, a
     const a = fieldA ? Number(result[fieldA.field_key]) : NaN;
     if (Number.isNaN(a)) continue;
 
-    if (field.formula_type === 'multiply' || field.formula_type === 'add' || field.formula_type === 'subtract') {
+    if (field.formula_type === 'multiply' || field.formula_type === 'add' || field.formula_type === 'subtract' || field.formula_type === 'divide') {
       const fieldB = field.formula_field_b_id ? byId.get(field.formula_field_b_id) : null;
       const b = fieldB ? Number(result[fieldB.field_key]) : NaN;
-      if (!Number.isNaN(b)) {
+      if (!Number.isNaN(b) && !(field.formula_type === 'divide' && b === 0)) {
         result[field.field_key] = field.formula_type === 'add' ? a + b
           : field.formula_type === 'subtract' ? a - b
+          : field.formula_type === 'divide' ? a / b
           : a * b;
       }
     } else {

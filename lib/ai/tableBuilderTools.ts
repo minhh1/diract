@@ -27,7 +27,7 @@ import { costUsd, TABLE_BUILDER_MODEL_ID } from "@/lib/billing/aiModels";
 const FIELD_TYPES = ["text", "number", "date", "boolean", "select", "email", "url", "currency", "table_relation"] as const;
 type FieldType = (typeof FIELD_TYPES)[number];
 
-const FORMULA_TYPES = ["multiply", "percentage_of", "add", "subtract", "sum_related", "max_related"] as const;
+const FORMULA_TYPES = ["multiply", "percentage_of", "add", "subtract", "divide", "sum_related", "max_related"] as const;
 type FormulaType = (typeof FORMULA_TYPES)[number];
 
 // The 7 general-purpose widget types -- deliberately excludes the 13
@@ -118,12 +118,12 @@ export const TABLE_BUILDER_TOOLS: ToolSchema[] = [
           enum: [...FORMULA_TYPES],
           description:
             "Makes this field auto-computed instead of typed-in -- field_type should be 'number' or 'currency'. " +
-            "'multiply'/'add'/'subtract': combines two fields on THIS SAME table (formula_field_a_label + formula_field_b_label). 'subtract' is a minus b, e.g. Profit Margin = Price (a) minus Total Cost (b) -- a missing/zero b is treated as 0 (no cost recorded yet), but a itself must be set. " +
+            "'multiply'/'add'/'subtract'/'divide': combines two fields on THIS SAME table (formula_field_a_label + formula_field_b_label). 'subtract' is a minus b, e.g. Profit Margin = Price (a) minus Total Cost (b) -- a missing/zero b is treated as 0 (no cost recorded yet), but a itself must be set. 'divide' is a divided by b -- use this for any real per-unit rate derived from a batch/total (e.g. Cost Per Meal = Batch Total Cost (a) divided by Meals Produced (b)) instead of asking the user to do that division themselves and type in the result; a zero/unset b leaves the field blank rather than erroring. " +
             "'percentage_of': one field on THIS table times a percent (formula_field_a_label + formula_percent, e.g. 10 for 10%). " +
             "'sum_related'/'max_related': totals (or finds the max of) a field on a RELATED CHILD table across every one of its rows that links back to this record -- requires formula_child_table_id, formula_field_a_label (on that child table), and formula_relation_field_label (a table_relation field on that child table pointing back at THIS table -- create it first with its own create_field call if it doesn't exist yet).",
         },
-        formula_field_a_label: { type: "string", description: "formula_type multiply/add/subtract/percentage_of: label of the other field, on THIS table (for subtract, this is the minuend -- the value subtracted FROM). formula_type sum_related/max_related: label of the field to total/max, on formula_child_table_id." },
-        formula_field_b_label: { type: "string", description: "formula_type multiply/add/subtract only: second field's label, on THIS table (for subtract, the value subtracted, i.e. result = a - b)." },
+        formula_field_a_label: { type: "string", description: "formula_type multiply/add/subtract/divide/percentage_of: label of the other field, on THIS table (for subtract, the minuend -- the value subtracted FROM; for divide, the dividend -- the value being divided). formula_type sum_related/max_related: label of the field to total/max, on formula_child_table_id." },
+        formula_field_b_label: { type: "string", description: "formula_type multiply/add/subtract/divide only: second field's label, on THIS table (for subtract, the value subtracted, i.e. result = a - b; for divide, the divisor, i.e. result = a / b)." },
         formula_percent: { type: "number", description: "formula_type percentage_of only, e.g. 10 for 10%." },
         formula_child_table_id: { type: "string", description: "formula_type sum_related/max_related only: id of the CHILD table formula_field_a_label and formula_relation_field_label live on." },
         formula_relation_field_label: { type: "string", description: "formula_type sum_related/max_related only: label of the table_relation field ON formula_child_table_id that points back at THIS table." },
@@ -467,7 +467,7 @@ async function createField(admin: any, companyId: string, userId: string, input:
     }
     formulaType = rawFormulaType as FormulaType;
 
-    if (formulaType === "multiply" || formulaType === "add" || formulaType === "subtract") {
+    if (formulaType === "multiply" || formulaType === "add" || formulaType === "subtract" || formulaType === "divide") {
       const a = await resolveFieldOnTable(tableId, String(input.formula_field_a_label || ""));
       const b = await resolveFieldOnTable(tableId, String(input.formula_field_b_label || ""));
       if (!a || !b) return { content: "formula_field_a_label and formula_field_b_label must both be existing fields on this table (create them first if they don't exist yet)", isError: true };

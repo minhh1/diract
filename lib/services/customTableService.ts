@@ -323,13 +323,18 @@ function computeFormulaFields(fields: CustomTableField[], values: Record<string,
     const a = rawA == null ? (field.formula_type === 'add' ? 0 : NaN) : Number(rawA);
     if (Number.isNaN(a)) continue;
 
-    if (field.formula_type === 'multiply' || field.formula_type === 'add' || field.formula_type === 'subtract') {
+    if (field.formula_type === 'multiply' || field.formula_type === 'add' || field.formula_type === 'subtract' || field.formula_type === 'divide') {
       const fieldB = field.formula_field_b_id ? byId.get(field.formula_field_b_id) : null;
       const rawB = fieldB ? result[fieldB.field_key] : undefined;
       const b = rawB == null ? (field.formula_type === 'add' || field.formula_type === 'subtract' ? 0 : NaN) : Number(rawB);
-      if (!Number.isNaN(b)) {
+      // Divide-by-zero (or a still-unset denominator, which resolves NaN
+      // above rather than 0) has no meaningful result -- null, not
+      // Infinity/NaN, same as any other formula whose dependency isn't
+      // ready yet.
+      if (!Number.isNaN(b) && !(field.formula_type === 'divide' && b === 0)) {
         result[field.field_key] = field.formula_type === 'add' ? a + b
           : field.formula_type === 'subtract' ? a - b
+          : field.formula_type === 'divide' ? a / b
           : a * b;
       }
     } else if (field.formula_type === 'percentage_of') {

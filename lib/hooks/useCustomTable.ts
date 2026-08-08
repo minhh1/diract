@@ -87,7 +87,7 @@ export interface CustomTableField {
   // and _formula_extend.sql) -- formula_type null means an ordinary,
   // user-entered field. For sum_related, formula_field_a_id and
   // formula_relation_field_id are fields on the RELATED table.
-  formula_type: 'multiply' | 'percentage_of' | 'add' | 'subtract' | 'sum_related' | 'max_related' | null;
+  formula_type: 'multiply' | 'percentage_of' | 'add' | 'subtract' | 'divide' | 'sum_related' | 'max_related' | null;
   formula_field_a_id: string | null;
   formula_field_b_id: string | null;
   formula_percent: number | null;
