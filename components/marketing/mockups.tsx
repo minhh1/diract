@@ -17,6 +17,7 @@ import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
   FileOutput, Users, Crown, Calendar, CalendarClock, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge, Flag,
+  Sparkles, Table2, LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 import { useMockupTheme } from "./MockupThemeProvider";
@@ -1293,6 +1294,54 @@ export function MockAiSafety() {
   );
 }
 
+// Recreates the real "Ask AI" builder (app/(app)/dashboard/ai/page.tsx,
+// components/ai/AiChatThread.tsx) -- the exact user-bubble style
+// (bg-[#F0EFEA], rounded-[22px]), the exact tool-call chip style
+// (bg-slate-50 border-slate-200/70 rounded-xl, a Check + the tool's own
+// icon from TOOL_ICONS + its toolLabel() text, e.g. `Creating table
+// "Jobs"` for create_table), and the real first-time onboarding prompt
+// (FIRST_TIME_WELCOME in lib/hooks/useAiConversationNav.ts: "I run a
+// plumbing company with 10 employees, I want to track jobs, invoices, and
+// payroll."). Only which tables get created and the wrap-up reply are
+// shortened for the card -- the structure (a plain confirming sentence
+// after the tool activity, not a list) matches how a real turn actually
+// renders there.
+export function MockAiBuilder() {
+  return (
+    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
+      <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+        <Sparkles size={14} className="text-slate-400" />
+        <span className="text-[13px] font-medium text-slate-700">Ask AI</span>
+      </div>
+      <div className="flex justify-end">
+        <div className="max-w-[85%] rounded-[18px] px-4 py-2.5 text-[12px] leading-relaxed bg-[#F0EFEA] text-slate-800">
+          I run a plumbing company with 10 employees. I want to track jobs, invoices, and payroll.
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
+          <Check size={11} className="shrink-0 text-emerald-600" />
+          <Table2 size={11} className="shrink-0 text-slate-400" />
+          <span>Creating table &quot;Jobs&quot;</span>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
+          <Check size={11} className="shrink-0 text-emerald-600" />
+          <Table2 size={11} className="shrink-0 text-slate-400" />
+          <span>Creating table &quot;Invoices&quot;</span>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
+          <Check size={11} className="shrink-0 text-emerald-600" />
+          <LayoutDashboard size={11} className="shrink-0 text-slate-400" />
+          <span>Creating dashboard &quot;Jobs&quot;</span>
+        </div>
+      </div>
+      <p className="text-[12px] text-slate-600 leading-relaxed">
+        Set up Jobs and Invoices, with a dashboard to track them. Want me to add Payroll next?
+      </p>
+    </div>
+  );
+}
+
 const MARKETPLACE_TEMPLATES: { key: string; icon: LucideIcon; color: string; name: string; industry: string }[] = [
   { key: "law-firm", icon: Landmark, color: "#6366f1", name: "Law Firm", industry: "Legal" },
   { key: "property", icon: Building2, color: "#0ea5e9", name: "Property Development", industry: "Property" },
@@ -1448,6 +1497,7 @@ export function MockMarketplace() {
 
 export const MOCKUPS = {
   customTable: MockCustomTable,
+  aiBuilder: MockAiBuilder,
   automation: MockAutomation,
   multiCompany: MockMultiCompany,
   roleAccess: MockRoleAccess,

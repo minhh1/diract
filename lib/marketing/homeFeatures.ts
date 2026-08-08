@@ -15,6 +15,14 @@ export const HOME_FEATURES: SpotlightFeature[] = [
     visual: "customTable",
   },
   {
+    slug: "ai-builder",
+    icon: "Sparkles",
+    title: "Describe it, and the AI builds it",
+    body: "Tell the assistant what your business does and it creates the tables, fields, and dashboards for it on the spot. Need a client-facing page too? Describe what it should say and it drafts one, asking a quick question first if anything's unclear.",
+    accent: "amber",
+    visual: "aiBuilder",
+  },
+  {
     slug: "auto-add-rules",
     icon: "Workflow",
     title: "Auto-add rules",
