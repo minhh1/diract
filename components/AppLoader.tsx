@@ -216,7 +216,7 @@ export default function AppLoader({ children }: { children: ReactNode }) {
               keep the animation playing. Transparent background (no white
               tile behind it, unlike the old SVG-in-a-box icon), so it sits
               directly on the splash background with no wrapper. */}
-          <img src="/loader-d.gif" alt="" width={80} height={80} style={{ display: "block", marginBottom: 28 }} />
+          <img src="/loader-d.gif" alt="" width={80} height={80} style={{ display: "block", marginBottom: 12 }} />
           <div style={{ width: 180 }}>
             <DiractProgress value={progress} height={16} label="Loading" trackColor="rgba(255,255,255,0.15)" />
           </div>

@@ -14,6 +14,9 @@
 // there's exactly one query shape to keep in sync, not two.
 import { supabase } from "@/lib/supabase";
 import { readCache, writeCache } from "@/lib/queryCache";
+import { readShellCache, writeShellCache } from "@/lib/shellCache";
+import { defaultQuickGlanceWidgets } from "@/lib/dashboardWidgets/defaultQuickGlanceLayout";
+import type { QuickGlanceWidget } from "@/lib/dashboardWidgets/quickGlanceTypes";
 
 export interface QuickGlancePropertyRow {
   id: string;
@@ -93,5 +96,49 @@ export async function warmQuickGlanceProjects(companyId: string): Promise<void> 
   if (readCache(key)) return;
   try {
     writeCache(key, await fetchQuickGlanceProjects(companyId));
+  } catch {}
+}
+
+// The Quick Glance WIDGET ARRANGEMENT itself (company_quick_glance_layout --
+// which bespoke/generic widgets, in what order, at what size) -- distinct
+// from fetchQuickGlanceProjects above, which is Property Developer's own
+// map data feeding INTO one particular widget. Every company type needs
+// this one warmed, not just Property Developer.
+//
+// Same key components/dashboard/QuickGlanceDashboard.tsx's own
+// shellCache read/write already use, and the same "no row yet -> seed the
+// default arrangement" fallback that component's load() used to duplicate
+// locally -- extracted here (and reused by that component directly, same
+// as fetchQuickGlanceProjects/PropertyDeveloperQuickGlance.tsx below) so
+// there's exactly one fetch-or-seed shape to keep in sync, not two.
+export const quickGlanceShellKey = (companyId: string) => `quick-glance:${companyId}`;
+
+export async function fetchQuickGlanceLayout(companyId: string, companyType: string | null): Promise<QuickGlanceWidget[]> {
+  const { data } = await supabase.from('company_quick_glance_layout').select('widgets').eq('company_id', companyId).maybeSingle();
+  if (data) return data.widgets || [];
+  // No row yet -- seed one with the default arrangement for this company
+  // type (mirrors the migration's own backfill for companies that existed
+  // before company_quick_glance_layout did).
+  const { data: timeFeeEntries } = await supabase
+    .from('company_tables').select('id')
+    .eq('company_id', companyId).eq('slug', 'time-fee-entries').is('deleted_at', null).maybeSingle();
+  const seeded = defaultQuickGlanceWidgets(companyType, timeFeeEntries?.id || null);
+  await supabase.from('company_quick_glance_layout').upsert({ company_id: companyId, widgets: seeded });
+  return seeded;
+}
+
+// Called from lib/companyBootstrap.ts's "shells" step for every company
+// (unlike warmQuickGlanceProjects, not gated to Property Developer -- the
+// layout row itself is universal even if a couple of unusual company
+// shapes end up never actually rendering QuickGlanceDashboard.tsx). Without
+// this, AppLoader's splash could dismiss (every OTHER bootstrap step done)
+// only for Quick Glance -- almost always the landing page right after --
+// to show its own second spinner while this one fetch it never knew to
+// warm finally ran. Reported live: exactly that gap, every single load.
+export async function warmQuickGlanceLayout(companyId: string, companyType: string | null): Promise<void> {
+  const key = quickGlanceShellKey(companyId);
+  if (readShellCache(key)) return;
+  try {
+    writeShellCache(key, await fetchQuickGlanceLayout(companyId, companyType));
   } catch {}
 }

@@ -17,7 +17,7 @@ import { warmRelationOptionsCache } from "@/components/dashboard/RelationPicker"
 import { warmCustomTables } from "@/lib/hooks/useCustomTables";
 import { warmCustomDashboards } from "@/lib/hooks/useCustomDashboards";
 import { warmCustomTableShells, startSystemTableRowPrefetch, warmSystemTableShells, warmSystemTableViewConfig } from "@/lib/hooks/prefetchShells";
-import { warmQuickGlanceProjects } from "@/lib/hooks/prefetchQuickGlance";
+import { warmQuickGlanceProjects, warmQuickGlanceLayout } from "@/lib/hooks/prefetchQuickGlance";
 import { emptyInvoiceSettings, type InvoiceSettings } from "@/lib/invoices/types";
 import type { TableLabelOverrides, DisabledSystemTables } from "@/components/CompanyContext";
 
@@ -176,6 +176,14 @@ async function runBootstrap(): Promise<CompanyBootstrapResult | null> {
       cid && result.companyType === 'Property Developer'
         ? warmQuickGlanceProjects(cid).catch(() => {})
         : Promise.resolve(),
+      // The Quick Glance widget ARRANGEMENT itself -- every company type,
+      // not just Property Developer (see that warmer's own doc comment).
+      // Quick Glance is almost always the landing page right after this
+      // splash dismisses, so leaving this unwarmed meant it showed its own
+      // second spinner immediately after AppLoader's -- reported live as
+      // "still spinning on first load" despite every other step here
+      // already being warm.
+      cid ? warmQuickGlanceLayout(cid, result.companyType).catch(() => {}) : Promise.resolve(),
     ]);
     notifyStep("shells");
   } else {

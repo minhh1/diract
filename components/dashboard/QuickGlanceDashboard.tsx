@@ -21,23 +21,12 @@ import { useCustomTables } from "@/lib/hooks/useCustomTables";
 import { supabase } from "@/lib/supabase";
 import { readShellCache, writeShellCache } from "@/lib/shellCache";
 import { useIsomorphicLayoutEffect } from "@/lib/hooks/useIsomorphicLayoutEffect";
-import { defaultQuickGlanceWidgets } from "@/lib/dashboardWidgets/defaultQuickGlanceLayout";
+import { fetchQuickGlanceLayout, quickGlanceShellKey } from "@/lib/hooks/prefetchQuickGlance";
 import type { QuickGlanceWidget } from "@/lib/dashboardWidgets/quickGlanceTypes";
 
 const QuickGlanceCanvas = dynamic(() => import("./quickGlance/QuickGlanceCanvas"));
 
 const KNOWN_TYPES = ['Law Firm', 'Property Developer'];
-
-// Unlike company/table data (both already warmed elsewhere -- CompanyContext
-// primes its own shell cache right after auth resolves, useCustomTables.ts
-// has its own module-level warm cache), this widget arrangement had NO
-// caching at all: a fresh network round trip on every single visit before
-// anything painted, gated behind the plain Loader2 screen below. Reported
-// live: a warm return visit still sat on a spinner (should have painted
-// instantly the way the rest of the app does on a repeat visit). Same
-// stale-while-revalidate shape useDashboardData.ts already uses for a
-// company_dashboards row.
-const quickGlanceShellKey = (companyId: string) => `quick-glance:${companyId}`;
 
 export default function QuickGlanceDashboard() {
   const { companyId, companyType, userId, loading: companyLoading } = useCompany();
@@ -82,26 +71,18 @@ export default function QuickGlanceDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId]);
 
+  // fetchQuickGlanceLayout (lib/hooks/prefetchQuickGlance.ts) owns the
+  // actual "load the row, or seed the default arrangement if there isn't
+  // one yet" logic -- shared with lib/companyBootstrap.ts's own
+  // warmQuickGlanceLayout warmer (called from AppLoader's bootstrap gate,
+  // before this component even mounts) so there's exactly one fetch-or-seed
+  // shape to keep in sync, not two independently-drifting copies.
   const load = useCallback(async () => {
-    // companyType may be null here (a templateless company) --
-    // defaultQuickGlanceWidgets(null, ...) has its own fallback arrangement
-    // for that case (setup checklist + AI assistant).
     if (!companyId) return;
-    const { data } = await supabase.from('company_quick_glance_layout').select('widgets').eq('company_id', companyId).maybeSingle();
-    if (data) {
-      const loaded = data.widgets || [];
-      setWidgets(loaded);
-      writeShellCache(quickGlanceShellKey(companyId), loaded);
-      return;
-    }
-    // No row yet -- seed one with the default arrangement for this
-    // company type (mirrors the migration's own backfill).
-    const timeFeeEntries = tables.find(t => t.slug === 'time-fee-entries');
-    const seeded = defaultQuickGlanceWidgets(companyType, timeFeeEntries?.id || null);
-    await supabase.from('company_quick_glance_layout').upsert({ company_id: companyId, widgets: seeded });
-    setWidgets(seeded);
-    writeShellCache(quickGlanceShellKey(companyId), seeded);
-  }, [companyId, companyType, tables]);
+    const loaded = await fetchQuickGlanceLayout(companyId, companyType);
+    setWidgets(loaded);
+    writeShellCache(quickGlanceShellKey(companyId), loaded);
+  }, [companyId, companyType]);
 
   useEffect(() => {
     if (!companyLoading && !tablesLoading && showCanvas) load();
