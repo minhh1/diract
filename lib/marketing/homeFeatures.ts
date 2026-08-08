@@ -78,4 +78,20 @@ export const HOME_FEATURES: SpotlightFeature[] = [
     accent: "emerald",
     visual: "marketplace",
   },
+  {
+    slug: "invoice-pdf-import",
+    icon: "Upload",
+    title: "Invoices parsed for you, not retyped",
+    body: "Upload a supplier invoice as a PDF and its line items get extracted automatically, ready for you to review, edit, and add straight into your own table. Nothing gets written until you approve it.",
+    accent: "violet",
+    visual: "invoiceImport",
+  },
+  {
+    slug: "sms",
+    icon: "MessageSquare",
+    title: "Text a lead or client directly",
+    body: "Send an SMS straight from a lead or client's record, no separate app or phone needed. It goes out from the platform's own number, and every reply lands back in a shared inbox your whole team can see.",
+    accent: "sky",
+    visual: "sendSms",
+  },
 ];

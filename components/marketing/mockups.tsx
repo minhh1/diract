@@ -17,7 +17,7 @@ import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   Check, AlertTriangle, X, FileText, Clock, PenSquare, ChevronDown,
   FileOutput, Users, Crown, Calendar, CalendarClock, Printer, Lock, CopyX, Landmark, Building2, Store, Gauge, Flag,
-  Table2, LayoutDashboard,
+  Table2, LayoutDashboard, Sparkles, MessageSquare, Send,
   type LucideIcon,
 } from "lucide-react";
 import { useMockupTheme } from "./MockupThemeProvider";
@@ -1276,6 +1276,113 @@ export function MockDisbursementsImport() {
   );
 }
 
+// Recreates components/dashboard/InvoiceImportModal.tsx's real review
+// screen -- the table-agnostic sibling to the law-firm Disbursements
+// import above (MockDisbursementsImport): no matter-grouping or duplicate
+// detection since there's no fixed table shape to check against, just a
+// flat, editable list of line items extracted from an uploaded PDF before
+// anything is written to whichever table it's attached to. Checkboxes are
+// real: unchecking a line updates the selected count/total in the footer,
+// same as the real modal.
+const INVOICE_IMPORT_LINES = [
+  { key: "consulting", label: "Consulting services, March", amount: 1450, defaultChecked: true },
+  { key: "materials", label: "Materials and supplies", amount: 320.5, defaultChecked: true },
+  { key: "callout", label: "Site call-out fee", amount: 95, defaultChecked: false },
+];
+export function MockInvoiceImport() {
+  const [checked, setChecked] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(INVOICE_IMPORT_LINES.map((l) => [l.key, l.defaultChecked]))
+  );
+  const selected = INVOICE_IMPORT_LINES.filter((l) => checked[l.key]);
+  const total = selected.reduce((sum, l) => sum + l.amount, 0);
+  return (
+    <div className="w-full max-w-sm rounded-[20px] border border-slate-200 bg-white shadow-xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
+        <h3 className="text-[12px] font-bold text-slate-800 uppercase tracking-wide">Import invoice from PDF</h3>
+        <X size={16} className="text-slate-300" />
+      </div>
+      <div className="px-5 pt-4 grid grid-cols-2 gap-2.5">
+        <div>
+          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Supplier</p>
+          <div className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-[11px] text-slate-700">Ferndale Trade Supplies</div>
+        </div>
+        <div>
+          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Invoice number</p>
+          <div className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-[11px] text-slate-700">INV-88213</div>
+        </div>
+      </div>
+      <div className="px-5 py-4">
+        <div className="border border-slate-200 rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50/60">
+            <span className="w-3.5 h-3.5 rounded border-2 border-indigo-500 bg-indigo-500 shrink-0" />
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Line items</span>
+          </div>
+          <div className="divide-y divide-slate-50">
+            {INVOICE_IMPORT_LINES.map((line) => (
+              <button
+                key={line.key}
+                onClick={() => setChecked((c) => ({ ...c, [line.key]: !c[line.key] }))}
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-[11px] text-slate-700 text-left hover:bg-slate-50 transition-colors"
+              >
+                <span className={`w-3.5 h-3.5 rounded border-2 shrink-0 transition-colors ${checked[line.key] ? "border-indigo-500 bg-indigo-500" : "border-slate-300"}`} />
+                <span className="flex-1 truncate">{line.label}</span>
+                <span className="text-slate-500 shrink-0">${line.amount.toFixed(2)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
+        <span className="text-[10px] text-slate-400">{selected.length} item{selected.length === 1 ? "" : "s"} selected · ${total.toFixed(2)}</span>
+        <span className="px-4 py-2 bg-indigo-600 text-white text-[11px] font-bold rounded-full whitespace-nowrap">Add {selected.length} item{selected.length === 1 ? "" : "s"}</span>
+      </div>
+    </div>
+  );
+}
+
+// Recreates components/dashboard/SendSmsCard.tsx's real composing state
+// exactly: same header ("Text {number}"), same textarea placeholder
+// pattern, same Send button, and the same message-history list below it
+// (a check icon for "sent", an alert icon for "failed", body text
+// truncated) -- sent through the platform's own shared Twilio number
+// (lib/sms/sendMessage.ts), not a per-company integration a visitor would
+// need to configure first.
+const SMS_HISTORY = [
+  { id: "1", body: "Hi Sarah, just confirming we received your documents, thanks!", status: "sent" as const, when: "Yesterday, 4:12 pm" },
+  { id: "2", body: "Reminder: your appointment is tomorrow at 10am.", status: "sent" as const, when: "Today, 9:03 am" },
+];
+export function MockSendSms() {
+  return (
+    <div className="w-full max-w-sm bg-slate-50 border border-slate-200 rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-2.5">
+        <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+          <MessageSquare size={11} /> Text 0412 345 678
+        </span>
+        <X size={12} className="text-slate-300" />
+      </div>
+      <div className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-[12px] text-slate-600">
+        Hi Sarah, your order is on its way and should arrive Thursday.
+      </div>
+      <div className="flex justify-end mt-2.5">
+        <span className="flex items-center gap-1.5 px-4 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-full">
+          <Send size={11} /> Send
+        </span>
+      </div>
+      <div className="mt-3 pt-3 border-t border-slate-200 space-y-2">
+        {SMS_HISTORY.map((m) => (
+          <div key={m.id} className="text-[11px]">
+            <div className="flex items-center gap-1.5">
+              <Check size={10} className="text-emerald-500 shrink-0" />
+              <span className="text-slate-400">{m.when}</span>
+            </div>
+            <p className="text-slate-600 truncate pl-4">{m.body}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Recreates the real conversation retention window
 // (app/api/ai/conversations/sweep/route.ts's RETENTION_DAYS constant) and
 // the Privacy Policy's no-training commitment for third-party providers.
@@ -1294,60 +1401,75 @@ export function MockAiSafety() {
   );
 }
 
-// Recreates two real chats, stacked in one card: the "Ask AI" table/
-// dashboard builder (app/(app)/dashboard/ai/page.tsx, components/ai/
-// AiChatThread.tsx) -- exact user-bubble style (bg-[#F0EFEA],
-// rounded-[22px]), exact tool-call chip style (bg-slate-50
-// border-slate-200/70 rounded-xl, a Check + the tool's own icon from
-// TOOL_ICONS + its toolLabel() text, e.g. `Creating table "Jobs"` for
-// create_table), and the real first-time onboarding prompt
-// (FIRST_TIME_WELCOME in lib/hooks/useAiConversationNav.ts: "I run a
-// plumbing company with 10 employees, I want to track jobs, invoices, and
-// payroll.") -- and, below it, the Content pages "Draft with AI" chat
-// (components/settings/ContentPagesTab.tsx) -- its own distinct exact
-// bubble style (bg-slate-900 text-white for the user side, bg-slate-50
-// border-slate-100 for the reply) and its own real "Applied to the page
-// below" tag, shown here after a short exchange rather than the longer
-// clarifying-question one that chat can also produce (see that file's
-// generate()/sendChatMessage handling) -- this card is about showing the
-// capability exists, not every turn shape it can take. Only which
-// tables/what the reply says are invented; both screens' own structure and
-// copy are not. One deliberate departure from the real "Ask AI" screen:
-// its header row literally reads "Ask AI" (Sidebar.tsx) -- dropped here
-// per the marketing site's voice, which doesn't name the underlying
-// technology at all ("we'll build it for you" instead), so this card has
-// no header label of its own.
+// Recreates two real, SEPARATE screens as two clearly-labeled panels in
+// one card -- not one continuous chat, which would misrepresent the
+// product (these are two different tools that don't share a thread):
+//
+// 1. "Ask AI" -- the full-page table/dashboard builder
+// (app/(app)/dashboard/ai/page.tsx, components/ai/AiChatThread.tsx).
+// Exact user-bubble style (bg-[#F0EFEA] text-slate-800, rounded-[22px]),
+// exact tool-call chip style (bg-slate-50 border-slate-200/70 rounded-xl
+// text-[13px] text-slate-600, a Check + the tool's own icon + its
+// toolLabel() text, e.g. `Creating table "Jobs"` for create_table), and
+// the real assistant-reply treatment: no bubble/card at all, just plain
+// text sitting on the page (AiChatThread.tsx line 526-531's own comment:
+// "Claude/ChatGPT-style, not a boxed container") -- the first version of
+// this mockup wrongly gave the assistant reply a `<p>` with no visual
+// distinction from a bubbled screen; explicit "no card" framing here
+// makes that real. First-time prompt is the real one
+// (FIRST_TIME_WELCOME in lib/hooks/useAiConversationNav.ts).
+//
+// 2. "Content pages · Draft with us" -- the small in-context AI box on
+// the Pages settings screen (components/settings/ContentPagesTab.tsx),
+// genuinely a different tool with its own bubble style (bg-slate-900
+// text-white for the user side, bg-slate-50 border-slate-100 for the
+// reply) and its own real "Applied to the page below" tag.
+//
+// Both panels get their own small header label (their real in-app name)
+// specifically so this doesn't read as one unified assistant -- an
+// earlier version dropped both headers for a cleaner look, which is
+// exactly what made it look like a single generic chat instead of two
+// distinct real screens.
 export function MockAiBuilder() {
   return (
-    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-[18px] px-4 py-2.5 text-[12px] leading-relaxed bg-[#F0EFEA] text-slate-800">
-          I run a plumbing company with 10 employees. I want to track jobs, invoices, and payroll.
+    <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-5">
+      <div className="space-y-3">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <Sparkles size={11} className="text-slate-300" /> Ask AI
         </div>
+        <div className="flex justify-end">
+          <div className="max-w-[85%] rounded-[18px] px-4 py-2.5 text-[12px] leading-relaxed bg-[#F0EFEA] text-slate-800">
+            I run a plumbing company with 10 employees. I want to track jobs, invoices, and payroll.
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
+            <Check size={11} className="shrink-0 text-emerald-600" />
+            <Table2 size={11} className="shrink-0 text-slate-400" />
+            <span>Creating table &quot;Jobs&quot;</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
+            <Check size={11} className="shrink-0 text-emerald-600" />
+            <Table2 size={11} className="shrink-0 text-slate-400" />
+            <span>Creating table &quot;Invoices&quot;</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
+            <Check size={11} className="shrink-0 text-emerald-600" />
+            <LayoutDashboard size={11} className="shrink-0 text-slate-400" />
+            <span>Creating dashboard &quot;Jobs&quot;</span>
+          </div>
+        </div>
+        {/* No bubble/card here -- matches the real screen, where the
+            assistant's reply sits directly on the page. */}
+        <p className="text-[12px] text-slate-600 leading-relaxed">
+          Set up Jobs and Invoices, with a dashboard to track them. Want me to add Payroll next?
+        </p>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
-          <Check size={11} className="shrink-0 text-emerald-600" />
-          <Table2 size={11} className="shrink-0 text-slate-400" />
-          <span>Creating table &quot;Jobs&quot;</span>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
-          <Check size={11} className="shrink-0 text-emerald-600" />
-          <Table2 size={11} className="shrink-0 text-slate-400" />
-          <span>Creating table &quot;Invoices&quot;</span>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] text-slate-600 bg-slate-50 border border-slate-200/70 w-fit">
-          <Check size={11} className="shrink-0 text-emerald-600" />
-          <LayoutDashboard size={11} className="shrink-0 text-slate-400" />
-          <span>Creating dashboard &quot;Jobs&quot;</span>
-        </div>
-      </div>
-      <p className="text-[12px] text-slate-600 leading-relaxed">
-        Set up Jobs and Invoices, with a dashboard to track them. Want me to add Payroll next?
-      </p>
 
-      <div className="pt-3 border-t border-slate-100 space-y-2">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Also drafts pages</p>
+      <div className="pt-4 border-t border-slate-100 space-y-3">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          <Sparkles size={11} className="text-slate-300" /> Content pages &middot; Draft with us
+        </div>
         <div className="flex justify-end">
           <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-[12px] bg-slate-900 text-white">
             Make me a page about our services
@@ -1535,6 +1657,8 @@ export const MOCKUPS = {
   trustAccount: MockTrustAccount,
   feesReport: MockFeesReport,
   disbursementsImport: MockDisbursementsImport,
+  invoiceImport: MockInvoiceImport,
+  sendSms: MockSendSms,
   precedents: MockPrecedents,
   teamsManagement: MockTeamsManagement,
   clientUpdates: MockClientUpdates,
