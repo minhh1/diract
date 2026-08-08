@@ -60,6 +60,52 @@ export function isValidAccountNumber(accountNumber: string): boolean {
   return /^\d{4,10}$/.test(cleaned);
 }
 
+/**
+ * Validates the FORMAT of a New Zealand Business Number (13 digits). NZBN
+ * is officially a GS1 GLN and does carry a real check-digit algorithm, but
+ * unlike ABN/ACN (verified against the ATO's own published algorithm and
+ * worked examples) this repo has no verified test vector for it -- shipping
+ * a possibly-wrong checksum risks silently REJECTING a real, valid NZBN,
+ * which is worse than under-validating. Same reasoning as isValidBSB below.
+ */
+export function isValidNZBN(nzbn: string): boolean {
+  const cleaned = nzbn.replace(/\s/g, '');
+  return /^\d{13}$/.test(cleaned);
+}
+
+/**
+ * Validates the FORMAT of a US Employer Identification Number -- 9 digits,
+ * optionally written as XX-XXXXXXX. The IRS assigns EINs from a list of
+ * valid campus-code prefixes that changes over time and isn't publicly
+ * bundled here, so (like isValidBSB) this only catches malformed input, not
+ * a wrong-but-plausible EIN.
+ */
+export function isValidEIN(ein: string): boolean {
+  const cleaned = ein.replace(/[\s-]/g, '');
+  return /^\d{9}$/.test(cleaned);
+}
+
+/**
+ * Validates the FORMAT of a UK Companies House company number -- 8 digits
+ * for a standard England/Wales company, or 2 letters (SC = Scotland,
+ * NI = Northern Ireland, OC/SO/NC = LLPs, FC = overseas) followed by 6
+ * digits for the other registration types. No public check digit exists.
+ */
+export function isValidUKCompanyNumber(companyNumber: string): boolean {
+  const cleaned = companyNumber.replace(/\s/g, '').toUpperCase();
+  return /^\d{8}$/.test(cleaned) || /^[A-Z]{2}\d{6}$/.test(cleaned);
+}
+
+/**
+ * Validates the FORMAT of a Canadian Business Number -- the base 9-digit
+ * identifier (before any program-account suffix like RT0001). No public
+ * check digit.
+ */
+export function isValidCABusinessNumber(businessNumber: string): boolean {
+  const cleaned = businessNumber.replace(/\s/g, '');
+  return /^\d{9}$/.test(cleaned);
+}
+
 export interface FieldValidationRule {
   validate: (value: string) => string | null; // returns an error message, or null if valid
 }

@@ -16,7 +16,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { AlertCircle, CheckCircle2, Eye, EyeOff, Fingerprint, Globe } from 'lucide-react-native';
 
 import { APP_URL } from '@/lib/config';
-import { isValidABN, isValidACN } from '@/lib/auEntityIds';
+import {
+  COUNTRIES, COUNTRY_IDENTIFIERS, validateIdentifiers, identifiersToRpcParams,
+  type CountryCode, type IdentifierValues,
+} from '@/lib/companyIdentifiers';
 import { signInWithGoogle } from '@/lib/googleOAuth';
 import { joinCompanyWithToken, validateInviteToken, type InviteTokenData } from '@/lib/inviteJoin';
 import { ensureStaffEntity } from '@/lib/staffEntityService';
@@ -39,8 +42,8 @@ export default function SignInScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [abn, setAbn] = useState('');
-  const [acn, setAcn] = useState('');
+  const [country, setCountry] = useState<CountryCode>('AU');
+  const [identifiers, setIdentifiers] = useState<IdentifierValues>({});
   const [showPassword, setShowPassword] = useState(false);
 
   const [inviteTokenInput, setInviteTokenInput] = useState('');
@@ -150,13 +153,12 @@ export default function SignInScreen() {
       setError('Password must be at least 8 characters.');
       return;
     }
-    if (abn.trim() && !isValidABN(abn.trim())) {
-      setError('ABN is not valid.');
-      return;
-    }
-    if (acn.trim() && !isValidACN(acn.trim())) {
-      setError('ACN is not valid.');
-      return;
+    if (!isJoinInvite) {
+      const identifierError = validateIdentifiers(country, identifiers);
+      if (identifierError) {
+        setError(identifierError);
+        return;
+      }
     }
 
     setLoading(true);
@@ -185,20 +187,20 @@ export default function SignInScreen() {
         );
         await joinCompanyWithToken(userId, inviteData);
       } else {
-        // register_company_and_profile's real signature (confirmed against
-        // the live database, untracked in any migration in this repo) never
-        // accepted a p_invite_token param -- passing one makes PostgREST
-        // unable to match any function overload at all, silently breaking
-        // every fresh self-signup with "Could not find the function ... in
-        // the schema cache". See app/(marketing)/login/page.tsx's own
-        // handleRegister for the same fix on the web app (commit 3d41f3d).
+        // register_company_and_profile never accepted a p_invite_token
+        // param -- passing one makes PostgREST unable to match any
+        // function overload at all, silently breaking every fresh
+        // self-signup with "Could not find the function ... in the schema
+        // cache". See app/(marketing)/login/page.tsx's own handleRegister
+        // for the same fix on the web app (commit 3d41f3d), and
+        // supabase/migrations/20260808050000_register_company_country_identifiers.sql
+        // for the function's current real signature.
         const { data: result, error: rpcError } = await supabase.rpc('register_company_and_profile', {
           p_user_id: userId,
           p_full_name: fullName || email.split('@')[0],
           p_email: email,
           p_company_name: companyName.trim(),
-          p_abn: abn.trim() || null,
-          p_acn: acn.trim() || null,
+          ...identifiersToRpcParams(country, identifiers),
         });
         if (rpcError) throw new Error(`Registration failed: ${rpcError.message}`);
         if (result && !result.success) {
@@ -341,22 +343,41 @@ export default function SignInScreen() {
                 }}
                 style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
               />
-              <View style={styles.row}>
-                <TextInput
-                  placeholder="ABN (optional)"
-                  placeholderTextColor={theme.textSecondary}
-                  value={abn}
-                  onChangeText={setAbn}
-                  style={[styles.input, styles.rowInput, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
-                />
-                <TextInput
-                  placeholder="ACN (optional)"
-                  placeholderTextColor={theme.textSecondary}
-                  value={acn}
-                  onChangeText={setAcn}
-                  style={[styles.input, styles.rowInput, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
-                />
+              <View style={styles.chipRow}>
+                {COUNTRIES.map((c) => {
+                  const selected = country === c.code;
+                  return (
+                    <Pressable
+                      key={c.code}
+                      onPress={() => {
+                        setCountry(c.code);
+                        setIdentifiers({});
+                        clearMessages();
+                      }}
+                      style={[
+                        styles.chip,
+                        { borderColor: theme.border, backgroundColor: selected ? theme.accentSecondary : theme.backgroundElement },
+                      ]}
+                    >
+                      <Text style={[styles.chipText, { color: selected ? '#fff' : theme.textSecondary }]}>{c.label}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
+              {COUNTRY_IDENTIFIERS[country].length > 0 && (
+                <View style={styles.row}>
+                  {COUNTRY_IDENTIFIERS[country].map((field) => (
+                    <TextInput
+                      key={field.key}
+                      placeholder={field.placeholder}
+                      placeholderTextColor={theme.textSecondary}
+                      value={identifiers[field.key] || ''}
+                      onChangeText={(v) => setIdentifiers((prev) => ({ ...prev, [field.key]: v }))}
+                      style={[styles.input, styles.rowInput, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
+                    />
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -492,6 +513,9 @@ const styles = StyleSheet.create({
   rowInput: { flex: 1 },
   companyBlock: { borderWidth: 1, borderRadius: Radii.input, padding: 12, gap: 8 },
   sectionLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radii.pill, borderWidth: 1 },
+  chipText: { fontSize: 12, fontWeight: '700' },
   eyeButton: { position: 'absolute', right: 16, top: 14 },
   forgotRow: { alignItems: 'flex-end', marginTop: -4 },
   forgotText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },

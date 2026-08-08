@@ -8,6 +8,10 @@ import { supabase } from "@/lib/supabase";
 import { ensureStaffEntity } from "@/lib/services/staffEntityService";
 import BrandMark from "@/components/marketing/BrandMark";
 import {
+  COUNTRIES, COUNTRY_IDENTIFIERS, validateIdentifiers, identifiersToRpcParams,
+  type CountryCode, type IdentifierValues,
+} from "@/lib/companyIdentifiers";
+import {
   Lock, Mail, Loader2, Globe, ArrowRight,
   Eye, EyeOff, CheckCircle2, Building2, AlertCircle
 } from "lucide-react";
@@ -19,25 +23,6 @@ const VALUE_PROPS = [
 ];
 
 type AuthMode = "login" | "register";
-
-function isValidABN(abn: string): boolean {
-  const cleaned = abn.replace(/\s/g, '');
-  if (!/^\d{11}$/.test(cleaned)) return false;
-  const weights = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19];
-  const digits = cleaned.split('').map(Number);
-  digits[0] -= 1;
-  return digits.reduce((sum, d, i) => sum + d * weights[i], 0) % 89 === 0;
-}
-
-function isValidACN(acn: string): boolean {
-  const cleaned = acn.replace(/\s/g, '');
-  if (!/^\d{9}$/.test(cleaned)) return false;
-  const weights = [8, 7, 6, 5, 4, 3, 2, 1];
-  const total = cleaned.slice(0, 8).split('').reduce((sum, d, i) => sum + Number(d) * weights[i], 0);
-  const remainder = total % 10;
-  const expected = remainder === 0 ? 0 : 10 - remainder;
-  return expected === Number(cleaned[8]);
-}
 
 function LoginPageInner() {
   const router = useRouter();
@@ -57,8 +42,8 @@ function LoginPageInner() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [companyName, setCompanyName] = useState("");
-  const [abn, setAbn] = useState("");
-  const [acn, setAcn] = useState("");
+  const [country, setCountry] = useState<CountryCode>("AU");
+  const [identifiers, setIdentifiers] = useState<IdentifierValues>({});
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -335,8 +320,10 @@ function LoginPageInner() {
     }
     if (password !== confirmPassword) { setError("Passwords don't match."); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
-    if (abn.trim() && !isValidABN(abn.trim())) { setError("ABN is not valid."); return; }
-    if (acn.trim() && !isValidACN(acn.trim())) { setError("ACN is not valid."); return; }
+    if (!isJoinInvite) {
+      const identifierError = validateIdentifiers(country, identifiers);
+      if (identifierError) { setError(identifierError); return; }
+    }
 
     setLoading(true);
 
@@ -406,12 +393,12 @@ function LoginPageInner() {
 
       } else {
         // ── Create new company (original flow) ─────────────────
-        // register_company_and_profile's real signature (confirmed against
-        // the live database, it isn't tracked in any migration in this repo)
-        // never accepted a p_invite_token param -- passing one made
-        // PostgREST unable to match any function overload at all, silently
-        // breaking every fresh self-signup with "Could not find the
-        // function ... in the schema cache".
+        // register_company_and_profile never accepted a p_invite_token
+        // param -- passing one made PostgREST unable to match any function
+        // overload at all, silently breaking every fresh self-signup with
+        // "Could not find the function ... in the schema cache". See
+        // supabase/migrations/20260808050000_register_company_country_identifiers.sql
+        // for its current real signature.
         const { data: result, error: rpcError } = await supabase.rpc(
           'register_company_and_profile',
           {
@@ -419,8 +406,7 @@ function LoginPageInner() {
             p_full_name: fullName || email.split('@')[0],
             p_email: email,
             p_company_name: companyName.trim(),
-            p_abn: abn.trim() || null,
-            p_acn: acn.trim() || null,
+            ...identifiersToRpcParams(country, identifiers),
           }
         );
 
@@ -464,7 +450,7 @@ function LoginPageInner() {
     setMode(m => m === 'login' ? 'register' : 'login');
     clearMessages();
     setPassword(''); setConfirmPassword('');
-    setCompanyName(''); setAbn(''); setAcn('');
+    setCompanyName(''); setCountry('AU'); setIdentifiers({});
   };
 
   return (
@@ -639,22 +625,27 @@ function LoginPageInner() {
                       className="w-full p-4 pl-12 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      type="text"
-                      placeholder="ABN (optional)"
-                      value={abn}
-                      onChange={e => { setAbn(e.target.value); clearMessages(); }}
-                      className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
-                    />
-                    <input
-                      type="text"
-                      placeholder="ACN (optional)"
-                      value={acn}
-                      onChange={e => { setAcn(e.target.value); clearMessages(); }}
-                      className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
-                    />
-                  </div>
+                  <select
+                    value={country}
+                    onChange={e => { setCountry(e.target.value as CountryCode); setIdentifiers({}); clearMessages(); }}
+                    className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm appearance-none"
+                  >
+                    {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                  </select>
+                  {COUNTRY_IDENTIFIERS[country].length > 0 && (
+                    <div className={`grid gap-3 ${COUNTRY_IDENTIFIERS[country].length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                      {COUNTRY_IDENTIFIERS[country].map(field => (
+                        <input
+                          key={field.key}
+                          type="text"
+                          placeholder={`${field.label} (optional)`}
+                          value={identifiers[field.key] || ""}
+                          onChange={e => { setIdentifiers(prev => ({ ...prev, [field.key]: e.target.value })); clearMessages(); }}
+                          className="w-full p-4 rounded-full border border-slate-200 bg-white outline-none focus:ring-4 focus:ring-indigo-100 font-medium text-sm"
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </>

@@ -110,10 +110,14 @@ export default function LawFirmGetStartedPage() {
       markDone(0);
 
       const userId = authData.user.id;
-      // No p_invite_token here -- the real function (confirmed against the
-      // live database; it isn't tracked in any migration in this repo)
-      // never accepted one. See the matching fix in
-      // app/(marketing)/login/page.tsx's own call site.
+      // No p_invite_token here -- register_company_and_profile never
+      // accepted one. See the matching fix in app/(marketing)/login/page.tsx's
+      // own call site. p_country is hardcoded 'AU', not a dropdown like
+      // the other two web signup entry points (CreateCompanyModal.tsx,
+      // login/page.tsx) -- this whole funnel is branded "law-firm-au" and
+      // auto-installs the Law Firm template's Australian trust-accounting
+      // rules, so offering any other country here would be actively
+      // misleading, not just unnecessary.
       const { data: result, error: rpcError } = await supabase.rpc("register_company_and_profile", {
         p_user_id: userId,
         p_full_name: fullName,
@@ -121,6 +125,7 @@ export default function LawFirmGetStartedPage() {
         p_company_name: firmName.trim(),
         p_abn: abn.trim() || null,
         p_acn: acn.trim() || null,
+        p_country: "AU",
       });
       if (rpcError) throw new Error(`Registration failed: ${rpcError.message}`);
       if (result && !result.success) throw new Error(result.error || "Registration failed");

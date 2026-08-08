@@ -15,11 +15,14 @@
 import { useState } from "react";
 import { X, Loader2, Building2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { isValidABN, isValidACN } from "@/lib/validation/entityValidation";
 import { ensureStaffEntity } from "@/lib/services/staffEntityService";
 import { clearAllClientCaches } from "@/lib/clearClientCaches";
 import { invalidateCustomTables } from "@/lib/hooks/useCustomTables";
 import { invalidateCustomDashboards } from "@/lib/hooks/useCustomDashboards";
+import {
+  COUNTRIES, COUNTRY_IDENTIFIERS, validateIdentifiers, identifiersToRpcParams,
+  type CountryCode, type IdentifierValues,
+} from "@/lib/companyIdentifiers";
 
 interface Props {
   userId: string;
@@ -29,16 +32,16 @@ interface Props {
 
 export default function CreateCompanyModal({ userId, currentFullName, onClose }: Props) {
   const [companyName, setCompanyName] = useState('');
-  const [abn, setAbn] = useState('');
-  const [acn, setAcn] = useState('');
+  const [country, setCountry] = useState<CountryCode>('AU');
+  const [identifiers, setIdentifiers] = useState<IdentifierValues>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleCreate = async () => {
     setError(null);
     if (!companyName.trim()) { setError('Company name is required.'); return; }
-    if (abn.trim() && !isValidABN(abn.trim())) { setError('ABN is not valid.'); return; }
-    if (acn.trim() && !isValidACN(acn.trim())) { setError('ACN is not valid.'); return; }
+    const identifierError = validateIdentifiers(country, identifiers);
+    if (identifierError) { setError(identifierError); return; }
 
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -49,8 +52,7 @@ export default function CreateCompanyModal({ userId, currentFullName, onClose }:
       p_full_name: currentFullName || user.email?.split('@')[0] || 'User',
       p_email: user.email,
       p_company_name: companyName.trim(),
-      p_abn: abn.trim() || null,
-      p_acn: acn.trim() || null,
+      ...identifiersToRpcParams(country, identifiers),
     });
 
     if (rpcError) { setError(rpcError.message); setSaving(false); return; }
@@ -98,18 +100,32 @@ export default function CreateCompanyModal({ userId, currentFullName, onClose }:
           <input value={companyName} onChange={e => setCompanyName(e.target.value)} autoFocus
             className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" placeholder="e.g. Acme Legal Pty Ltd" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">ABN</label>
-            <input value={abn} onChange={e => setAbn(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" placeholder="Optional" />
-          </div>
-          <div>
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">ACN</label>
-            <input value={acn} onChange={e => setAcn(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none" placeholder="Optional" />
-          </div>
+        <div>
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Country</label>
+          <select
+            value={country}
+            onChange={e => { setCountry(e.target.value as CountryCode); setIdentifiers({}); }}
+            className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none appearance-none"
+          >
+            {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+          </select>
         </div>
+
+        {COUNTRY_IDENTIFIERS[country].length > 0 && (
+          <div className={`grid gap-3 ${COUNTRY_IDENTIFIERS[country].length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+            {COUNTRY_IDENTIFIERS[country].map(field => (
+              <div key={field.key}>
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">{field.label}</label>
+                <input
+                  value={identifiers[field.key] || ""}
+                  onChange={e => setIdentifiers(prev => ({ ...prev, [field.key]: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-full py-2.5 px-4 text-sm font-medium outline-none"
+                  placeholder={field.placeholder}
+                />
+              </div>
+            ))}
+          </div>
+        )}
 
         {error && <p className="text-[11px] text-rose-600 font-medium">{error}</p>}
 
