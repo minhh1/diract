@@ -1294,21 +1294,29 @@ export function MockAiSafety() {
   );
 }
 
-// Recreates the real "Ask AI" builder (app/(app)/dashboard/ai/page.tsx,
-// components/ai/AiChatThread.tsx) -- the exact user-bubble style
-// (bg-[#F0EFEA], rounded-[22px]), the exact tool-call chip style
-// (bg-slate-50 border-slate-200/70 rounded-xl, a Check + the tool's own
-// icon from TOOL_ICONS + its toolLabel() text, e.g. `Creating table
-// "Jobs"` for create_table), and the real first-time onboarding prompt
+// Recreates two real chats, stacked in one card: the "Ask AI" table/
+// dashboard builder (app/(app)/dashboard/ai/page.tsx, components/ai/
+// AiChatThread.tsx) -- exact user-bubble style (bg-[#F0EFEA],
+// rounded-[22px]), exact tool-call chip style (bg-slate-50
+// border-slate-200/70 rounded-xl, a Check + the tool's own icon from
+// TOOL_ICONS + its toolLabel() text, e.g. `Creating table "Jobs"` for
+// create_table), and the real first-time onboarding prompt
 // (FIRST_TIME_WELCOME in lib/hooks/useAiConversationNav.ts: "I run a
 // plumbing company with 10 employees, I want to track jobs, invoices, and
-// payroll."). Only which tables get created and the wrap-up reply are
-// shortened for the card -- the structure (a plain confirming sentence
-// after the tool activity, not a list) matches how a real turn actually
-// renders there. One deliberate departure from the real screen: the header
-// row there literally reads "Ask AI" (Sidebar.tsx) -- dropped here per the
-// marketing site's voice, which doesn't name the underlying technology at
-// all ("we'll build it for you" instead), so this card has no header label.
+// payroll.") -- and, below it, the Content pages "Draft with AI" chat
+// (components/settings/ContentPagesTab.tsx) -- its own distinct exact
+// bubble style (bg-slate-900 text-white for the user side, bg-slate-50
+// border-slate-100 for the reply) and its own real "Applied to the page
+// below" tag, shown here after a short exchange rather than the longer
+// clarifying-question one that chat can also produce (see that file's
+// generate()/sendChatMessage handling) -- this card is about showing the
+// capability exists, not every turn shape it can take. Only which
+// tables/what the reply says are invented; both screens' own structure and
+// copy are not. One deliberate departure from the real "Ask AI" screen:
+// its header row literally reads "Ask AI" (Sidebar.tsx) -- dropped here
+// per the marketing site's voice, which doesn't name the underlying
+// technology at all ("we'll build it for you" instead), so this card has
+// no header label of its own.
 export function MockAiBuilder() {
   return (
     <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
@@ -1337,6 +1345,23 @@ export function MockAiBuilder() {
       <p className="text-[12px] text-slate-600 leading-relaxed">
         Set up Jobs and Invoices, with a dashboard to track them. Want me to add Payroll next?
       </p>
+
+      <div className="pt-3 border-t border-slate-100 space-y-2">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Also drafts pages</p>
+        <div className="flex justify-end">
+          <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-[12px] bg-slate-900 text-white">
+            Make me a page about our services
+          </div>
+        </div>
+        <div className="flex justify-start">
+          <div className="max-w-[90%] rounded-2xl px-4 py-2.5 text-[12px] bg-slate-50 text-slate-700 border border-slate-100">
+            Here&apos;s a page with an overview and a short section for each service you offer.
+            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-emerald-500">
+              <Check size={10} /> Applied to the page below
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
